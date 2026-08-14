@@ -43,6 +43,7 @@ export interface Item {
   category: ItemCategory;
   description: string;
   images: string[];
+  bill?: string ;
   rentPricePerDay: number;
   securityDeposit: number;
   availability: boolean;

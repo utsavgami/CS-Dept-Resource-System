@@ -142,7 +142,7 @@ export const ExploreItemsPage: React.FC<ExploreItemsPageProps> = ({
           {/* Max Price Slider */}
           <div className="flex items-center space-x-3">
             <span className="font-semibold text-slate-600 dark:text-slate-400">
-              Max Rent / Day: <strong className="text-blue-600 dark:text-blue-400">${maxPrice}</strong>
+              Max Rent / Day: <strong className="text-blue-600 dark:text-blue-400">₹{maxPrice}</strong>
             </span>
             <input
               type="range"
@@ -254,11 +254,11 @@ export const ExploreItemsPage: React.FC<ExploreItemsPageProps> = ({
               <div className="px-5 py-3.5 bg-slate-50/70 dark:bg-slate-950/40 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                 <div>
                   <span className="text-base font-black text-blue-600 dark:text-blue-400">
-                    ${item.rentPricePerDay}
+                    ₹{item.rentPricePerDay}
                   </span>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium"> / day</span>
                   {item.securityDeposit > 0 && (
-                    <p className="text-[10px] text-slate-400">Deposit: ${item.securityDeposit}</p>
+                    <p className="text-[10px] text-slate-400">Deposit: ₹{item.securityDeposit}</p>
                   )}
                 </div>
 

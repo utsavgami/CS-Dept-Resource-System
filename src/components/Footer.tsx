@@ -50,9 +50,6 @@ export const Footer: React.FC<FooterProps> = ({ setActiveTab }) => {
                 </button>
               </li>
               <li>
-                <button onClick={() => setActiveTab('docs')} className="hover:text-indigo-400 transition">
-                  MERN Stack Architecture & ERD
-                </button>
               </li>
             </ul>
           </div>
@@ -77,7 +74,7 @@ export const Footer: React.FC<FooterProps> = ({ setActiveTab }) => {
           </div>
 
           {/* MERN Stack Spec */}
-          <div>
+          {/* <div>
             <h4 className="font-display font-bold text-white text-sm mb-4">MERN Stack Tech</h4>
             <div className="flex flex-wrap gap-1.5 text-[11px]">
               <span className="bg-indigo-900/60 border border-indigo-800/60 text-slate-300 px-2 py-1 rounded-md font-mono">React.js 19</span>
@@ -90,7 +87,7 @@ export const Footer: React.FC<FooterProps> = ({ setActiveTab }) => {
             <p className="text-[11px] text-slate-400 mt-3">
               Full production-ready modular REST API server running on port 3000.
             </p>
-          </div>
+          </div> */}
 
         </div>
 

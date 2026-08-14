@@ -193,7 +193,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
                         <span>{b.startDate} to {b.endDate} ({b.totalDays} days)</span>
                       </span>
                       <span className="font-bold text-blue-600 dark:text-blue-400">
-                        Total: ${b.totalCost}
+                        Total: ₹{b.totalCost}
                       </span>
                     </div>
                   </div>

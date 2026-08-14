@@ -100,7 +100,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </h1>
 
           <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl font-sans">
-            Save hundreds of dollars on graphing calculators, Raspberry Pi kits, digital oscilloscopes, and algorithm textbooks. Rent safely from verified CS department peers with built-in real-time chat, security deposit management, and complaint auto-blocking!
+            Save hundreds of rupees on graphing calculators, Raspberry Pi kits, digital oscilloscopes, and algorithm textbooks. Rent safely from verified CS department peers with built-in real-time chat, security deposit management, and complaint auto-blocking!
           </p>
 
           {/* Quick Search Input */}
@@ -267,11 +267,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <div className="px-5 py-3.5 bg-slate-50/70 dark:bg-slate-950/40 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                   <div>
                     <span className="text-base font-black text-blue-600 dark:text-blue-400">
-                      ${item.rentPricePerDay}
+                      ₹{item.rentPricePerDay}
                     </span>
                     <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium"> / day</span>
                     {item.securityDeposit > 0 && (
-                      <p className="text-[10px] text-slate-400">Deposit: ${item.securityDeposit}</p>
+                      <p className="text-[10px] text-slate-400">Deposit: ₹{item.securityDeposit}</p>
                     )}
                   </div>
 

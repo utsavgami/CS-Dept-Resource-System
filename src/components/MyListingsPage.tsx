@@ -129,8 +129,8 @@ export const MyListingsPage: React.FC<MyListingsPageProps> = ({
                   </p>
 
                   <div className="pt-2 flex items-center justify-between text-xs font-bold text-blue-600 dark:text-blue-400">
-                    <span>${item.rentPricePerDay} / day</span>
-                    <span className="text-slate-400 font-normal">Deposit: ${item.securityDeposit}</span>
+                    <span>₹{item.rentPricePerDay} / day</span>
+                    <span className="text-slate-400 font-normal">Deposit: ₹{item.securityDeposit}</span>
                   </div>
                 </div>
               </div>

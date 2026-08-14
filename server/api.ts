@@ -54,38 +54,71 @@ export function requireAdmin(req: AuthenticatedRequest, res: Response, next: Nex
 
 // POST /api/auth/register
 apiRouter.post('/auth/register', async (req: Request, res: Response) => {
-  const { name, email, enrollmentNumber, mobileNumber, password, semester, department } = req.body;
-
-  if (!name || !email || !enrollmentNumber || !mobileNumber || !password) {
-    return res.status(400).json({ error: 'All fields are required' });
-  }
-
-  const existingEmail = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (existingEmail) {
-    return res.status(400).json({ error: 'An account with this email already exists' });
-  }
-
-  const existingEnrollment = db.users.find(u => u.enrollmentNumber.toLowerCase() === enrollmentNumber.toLowerCase());
-  if (existingEnrollment) {
-    return res.status(400).json({ error: 'An account with this enrollment number already exists' });
-  }
-
-  // Verification rule: CS Department email / student check
-  const isCSDept = email.toLowerCase().includes('cs') || 
-                   email.toLowerCase().endsWith('.edu') || 
-                   email.toLowerCase().endsWith('.ac.in') ||
-                   (department && department.toLowerCase().includes('computer'));
-
-  const newUser: User = {
-    _id: `usr_std_${Date.now()}`,
+  const {
     name,
-    email: email.toLowerCase(),
+    email,
     enrollmentNumber,
     mobileNumber,
+    password,
+    semester,
+    department
+  } = req.body;
+
+  if (!name || !email || !enrollmentNumber || !mobileNumber || !password) {
+    return res.status(400).json({
+      error: 'All fields are required'
+    });
+  }
+
+  // ONLY COLLEGE CS GMAIL ALLOWED
+  // Format: 0801CSYYRRRR@gmail.com
+  // Example: 0801CS231160@gmail.com
+
+  const emailValue = String(email).trim().toLowerCase();
+
+  const collegeEmailRegex = /^0801cs\d{2}\d{4}@gmail\.com$/i;
+
+  if (!collegeEmailRegex.test(emailValue)) {
+    return res.status(400).json({
+      error: 'Please use your college CS email. Format: 0801CSYYRRRR@gmail.com'
+    });
+  }
+
+  // Check duplicate email
+  const existingEmail = db.users.find(
+    u => u.email.toLowerCase() === emailValue
+  );
+
+  if (existingEmail) {
+    return res.status(400).json({
+      error: 'An account with this email already exists'
+    });
+  }
+
+  // Check duplicate enrollment number
+  const existingEnrollment = db.users.find(
+    u =>
+      u.enrollmentNumber.toLowerCase() ===
+      String(enrollmentNumber).trim().toLowerCase()
+  );
+
+  if (existingEnrollment) {
+    return res.status(400).json({
+      error: 'An account with this enrollment number already exists'
+    });
+  }
+
+  // Create user
+  const newUser: User = {
+    _id: `usr_std_${Date.now()}`,
+    name: String(name).trim(),
+    email: emailValue,
+    enrollmentNumber: String(enrollmentNumber).trim(),
+    mobileNumber: String(mobileNumber).trim(),
     department: department || 'Computer Science & Engineering',
     semester: semester || '1st Semester',
     role: 'student',
-    verified: isCSDept,
+    verified: true,
     isBlocked: false,
     avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
     complaintCount: 0,
@@ -97,7 +130,16 @@ apiRouter.post('/auth/register', async (req: Request, res: Response) => {
 
   db.users.push(newUser);
 
-  const token = jwt.sign({ userId: newUser._id, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign(
+    {
+      userId: newUser._id,
+      role: newUser.role
+    },
+    JWT_SECRET,
+    {
+      expiresIn: '7d'
+    }
+  );
 
   return res.status(201).json({
     message: 'Student registered successfully',
@@ -111,19 +153,42 @@ apiRouter.post('/auth/login', async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
+    return res.status(400).json({
+      error: 'Email and password are required'
+    });
   }
 
-  const user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  const emailValue = String(email).trim().toLowerCase();
+
+  // Find existing user
+  // No college email restriction here
+  // This allows demo accounts to login
+  const user = db.users.find(
+    u => u.email.toLowerCase() === emailValue
+  );
+
   if (!user) {
-    return res.status(400).json({ error: 'Invalid email or password' });
+    return res.status(400).json({
+      error: 'Invalid email or password'
+    });
   }
 
   if (user.isBlocked) {
-    return res.status(403).json({ error: 'ACCOUNT BLOCKED: You have received 5 or more verified complaints. Only CS Admin can unblock your account.' });
+    return res.status(403).json({
+      error: 'ACCOUNT BLOCKED: You have received 5 or more verified complaints. Only CS Admin can unblock your account.'
+    });
   }
 
-  const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign(
+    {
+      userId: user._id,
+      role: user.role
+    },
+    JWT_SECRET,
+    {
+      expiresIn: '7d'
+    }
+  );
 
   return res.json({
     message: 'Login successful',
@@ -264,11 +329,12 @@ apiRouter.get('/items/:id', (req: Request, res: Response) => {
 // POST /api/items
 apiRouter.post('/items', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
-  const { title, category, description, images, rentPricePerDay, securityDeposit, condition, pickupLocation } = req.body;
+  const { title, category, description, images,bill, rentPricePerDay, securityDeposit, condition, pickupLocation } = req.body;
 
   if (!title || !category || !description || !rentPricePerDay || !pickupLocation) {
     return res.status(400).json({ error: 'Please provide all required item details' });
   }
+
 
   const newItem: Item = {
     _id: `itm_${Date.now()}`,
@@ -282,6 +348,7 @@ apiRouter.post('/items', authenticateToken, (req: AuthenticatedRequest, res: Res
     category: category as ItemCategory,
     description,
     images: Array.isArray(images) && images.length > 0 ? images : ['https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=800'],
+    bill: bill || undefined,
     rentPricePerDay: Number(rentPricePerDay),
     securityDeposit: Number(securityDeposit || 0),
     availability: true,
@@ -309,12 +376,13 @@ apiRouter.put('/items/:id', authenticateToken, (req: AuthenticatedRequest, res: 
     return res.status(403).json({ error: 'Unauthorized to modify this listing' });
   }
 
-  const { title, category, description, images, rentPricePerDay, securityDeposit, availability, condition, pickupLocation } = req.body;
+  const { title, category, description, images, bill, rentPricePerDay, securityDeposit, availability, condition, pickupLocation } = req.body;
 
   if (title) item.title = title;
   if (category) item.category = category;
   if (description) item.description = description;
   if (images) item.images = images;
+  if (bill !== undefined) item.bill = bill;
   if (rentPricePerDay !== undefined) item.rentPricePerDay = Number(rentPricePerDay);
   if (securityDeposit !== undefined) item.securityDeposit = Number(securityDeposit);
   if (availability !== undefined) item.availability = Boolean(availability);
@@ -401,22 +469,27 @@ apiRouter.post('/bookings', authenticateToken, (req: AuthenticatedRequest, res: 
   };
 
   db.bookings.unshift(newBooking);
+  // Mark item as unavailable immediately after booking request
+  item.availability = false;
+  item.updatedAt = new Date().toISOString();
 
-  // Notify Owner
-  db.notifications.push({
-    _id: `ntf_${Date.now()}`,
-    userId: item.ownerId,
-    title: 'New Booking Request',
-    message: `${borrower.name} requested to rent "${item.title}" for ${diffDays} days.`,
-    type: 'booking',
-    read: false,
-    link: '/bookings',
-    createdAt: new Date().toISOString()
-  });
-
-  return res.status(201).json({ message: 'Booking request sent successfully', booking: newBooking });
+// Notify Owner
+db.notifications.push({
+  _id: `ntf_${Date.now()}`,
+  userId: item.ownerId,
+  title: 'New Booking Request',
+  message: `${borrower.name} requested to rent "${item.title}" for ${diffDays} days.`,
+  type: 'booking',
+  read: false,
+  link: '/bookings',
+  createdAt: new Date().toISOString()
 });
 
+return res.status(201).json({
+  message: 'Booking request sent successfully',
+  booking: newBooking
+});
+});
 // GET /api/bookings/my
 apiRouter.get('/bookings/my', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user!._id;

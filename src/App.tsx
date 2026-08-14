@@ -215,7 +215,7 @@ export default function App() {
         )}
 
         {/* Chat Messages */}
-        {activeTab === 'messages' && (
+        {/* {activeTab === 'messages' && (
           currentUser ? (
             <MessagesPage
               currentUser={currentUser}
@@ -228,7 +228,7 @@ export default function App() {
               onOpenDemoModal={() => setShowDemoModal(true)}
             />
           )
-        )}
+        )} */}
 
         {/* Complaints Protocol */}
         {activeTab === 'complaints' && (
@@ -280,9 +280,9 @@ export default function App() {
         )}
 
         {/* Architecture & Documentation */}
-        {activeTab === 'docs' && (
+        {/* {activeTab === 'docs' && (
           <DocsPage />
-        )}
+        )} */}
 
         {/* Login */}
         {activeTab === 'login' && (
