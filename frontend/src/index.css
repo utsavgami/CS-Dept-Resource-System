@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+/* App toggles the 'dark' class on <html>, so tell Tailwind v4 to use that
+   instead of the OS-level prefers-color-scheme media query. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
