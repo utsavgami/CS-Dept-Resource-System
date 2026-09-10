@@ -1,0 +1,19 @@
+{
+  "name": "cs-resource-sharing-backend",
+  "version": "1.0.0",
+  "description": "CS Department Resource Sharing System - Backend (converted from TypeScript)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.6",
+    "express": "^4.22.2",
+    "jsonwebtoken": "^9.0.3",
+    "socket.io": "^4.8.3",
+    "vite": "^5.4.21"
+  }
+}
