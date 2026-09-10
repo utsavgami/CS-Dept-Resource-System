@@ -262,7 +262,7 @@ export default function App() {
         )}
 
         {/* Admin Dashboard */}
-        {/* {activeTab === 'admin' && (
+        {activeTab === 'admin' && (
           currentUser?.role === 'admin' ? (
             <AdminDashboardPage />
           ) : (
@@ -276,7 +276,7 @@ export default function App() {
               </button>
             </div>
           )
-        )} */}
+        )}
 
         {/* Architecture & Documentation */}
         {/* {activeTab === 'docs' && (
