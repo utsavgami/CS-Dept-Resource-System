@@ -14,7 +14,7 @@ export const MessagesPage = ({
   const [loading, setLoading] = useState(true);
 
   const socketRef = useRef(null);
-  const chatEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
 
   useEffect(() => {
     loadBookings();
@@ -40,7 +40,8 @@ export const MessagesPage = ({
     try {
       setLoading(true);
       const res = await api.getMyBookings();
-      const allBookings = [...(res.borrowed || []), ...(res.ownerRequests || [])];
+      const allBookings = [...(res.borrowed || []), ...(res.ownerRequests || [])]
+        .filter(b => b.status === 'Accepted' || b.status === 'Completed');
       setBookings(allBookings);
 
       if (initialBookingId) {
@@ -73,8 +74,14 @@ export const MessagesPage = ({
   };
 
   const scrollToBottom = () => {
+    // Scroll only the chat message list itself, not the whole page — using
+    // scrollIntoView here would scroll the entire window (past the footer)
+    // instead of just this container.
     setTimeout(() => {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const el = messagesContainerRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
     }, 100);
   };
 
@@ -93,8 +100,13 @@ export const MessagesPage = ({
       ? selectedBooking.ownerName
       : selectedBooking.borrowerName;
 
-    // Emit via Socket.io
-    if (socketRef.current) {
+    // Prefer Socket.io for real-time delivery. The server broadcasts the
+    // saved message back to everyone in the room (including the sender),
+    // so we don't add it locally here — it arrives via the
+    // 'receive_chat_message' listener above. Only fall back to the REST
+    // call if the socket isn't actually connected, to avoid creating two
+    // separate messages for a single send.
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('send_chat_message', {
         bookingId: selectedBooking._id,
         senderId: currentUser._id,
@@ -103,9 +115,9 @@ export const MessagesPage = ({
         receiverName,
         content
       });
+      return;
     }
 
-    // Fallback REST API call
     try {
       const res = await api.sendMessage({
         bookingId: selectedBooking._id,
@@ -117,8 +129,8 @@ export const MessagesPage = ({
         return [...prev, res.message];
       });
       scrollToBottom();
-    } catch {
-      // ignore socket already broadcasted
+    } catch (err) {
+      alert(err.message || 'Failed to send message');
     }
   };
 
@@ -145,7 +157,7 @@ export const MessagesPage = ({
 
           <div className="space-y-2 max-h-[480px] overflow-y-auto">
             {bookings.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-10">No active chats available</p>
+              <p className="text-xs text-slate-400 text-center py-10">No active chats available — chat opens once a booking is accepted</p>
             ) : (
               bookings.map((b) => {
                 const isOwner = b.ownerId === currentUser._id;
@@ -205,7 +217,7 @@ export const MessagesPage = ({
               </div>
 
               {/* Message Bubble Container */}
-              <div className="flex-1 overflow-y-auto my-4 space-y-3 p-2 max-h-[380px]">
+              <div ref={messagesContainerRef} className="flex-1 overflow-y-auto my-4 space-y-3 p-2 max-h-[380px]">
                 {messages.length === 0 ? (
                   <div className="text-center py-12 text-slate-400 space-y-2">
                     <Sparkles className="w-8 h-8 text-blue-500 mx-auto opacity-50" />
@@ -235,7 +247,6 @@ export const MessagesPage = ({
                     );
                   })
                 )}
-                <div ref={chatEndRef} />
               </div>
 
               {/* Chat Input Form */}

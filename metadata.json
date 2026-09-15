@@ -1,6 +1,0 @@
-{
-  "name": "CS Department Resource Sharing & Rental System",
-  "description": "Peer-to-peer resource sharing, rental, and booking platform for Computer Science students with real-time chat, complaint management, auto-blocking, and admin panel.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

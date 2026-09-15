@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { api, setStoredUser } from '../lib/apiClient';
+import React from 'react';
+import { useProfileController } from '../controllers/useProfileController';
 import {
   User as UserIcon,
   Mail,
@@ -12,70 +12,17 @@ import {
   BookmarkCheck,
   Edit3,
   AlertTriangle,
-  Award
+  Award,
+  Heart
 } from 'lucide-react';
 
 export const ProfilePage = ({
   currentUser,
-  onUserUpdated
+  onUserUpdated,
+  setActiveTab
 }) => {
-  const [profileStats, setProfileStats] = useState({
-    listingsCount: 0,
-    borrowedCount: 0,
-    ratings: []
-  });
-
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
-
-  // Edit fields
-  const [name, setName] = useState(currentUser.name);
-  const [mobileNumber, setMobileNumber] = useState(currentUser.mobileNumber);
-  const [semester, setSemester] = useState(currentUser.semester);
-  const [avatar, setAvatar] = useState(currentUser.avatar || '');
-  const [updating, setUpdating] = useState(false);
-
-  useEffect(() => {
-    loadProfileDetails();
-  }, [currentUser._id]);
-
-  const loadProfileDetails = async () => {
-    try {
-      setLoading(true);
-      const res = await api.getUserProfile(currentUser._id);
-      setProfileStats({
-        listingsCount: res.listingsCount || 0,
-        borrowedCount: res.borrowedCount || 0,
-        ratings: res.ratings || []
-      });
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUpdateProfile = async (e) => {
-    e.preventDefault();
-    try {
-      setUpdating(true);
-      const res = await api.updateProfile({
-        name,
-        mobileNumber,
-        semester,
-        avatar
-      });
-
-      setStoredUser(res.user);
-      onUserUpdated(res.user);
-      setEditing(false);
-      alert('Profile updated successfully!');
-    } catch (err) {
-      alert(err.message || 'Failed to update profile');
-    } finally {
-      setUpdating(false);
-    }
-  };
+  const { profileStats, loading, editing, setEditing, form, setForm, updating, saveProfile } =
+    useProfileController({ currentUser, onUserUpdated });
 
   return (
     <div className="max-w-4xl mx-auto py-8 space-y-8 animate-in fade-in">
@@ -148,6 +95,18 @@ export const ProfilePage = ({
             <p className="text-[11px] text-slate-400 font-medium mt-0.5">Items Borrowed</p>
           </div>
 
+          {/* <button
+            type="button"
+            onClick={() => setActiveTab && setActiveTab('favorites')}
+            className="p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-red-300 dark:hover:border-red-800 hover:bg-red-50/50 dark:hover:bg-red-950/20 transition"
+          >
+            <div className="flex items-center justify-center space-x-1 text-red-500 font-black text-xl">
+              <Heart className="w-5 h-5 fill-red-400" />
+              <span>{profileStats.favoritesCount}</span>
+            </div>
+            <p className="text-[11px] text-slate-400 font-medium mt-0.5">FavoritesMy </p>
+          </button> */}
+
           <div className="p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800">
             <span className={`font-black text-xl ${
               currentUser.complaintCount > 0 ? 'text-amber-600' : 'text-slate-600 dark:text-slate-300'
@@ -159,6 +118,46 @@ export const ProfilePage = ({
 
         </div>
 
+        {/* Quick Actions — moved here from the navbar to keep it uncluttered */}
+        <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+          <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+            Quick Actions
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <button
+              onClick={() => setActiveTab && setActiveTab('my-listings')}
+              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-800 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition flex flex-col items-center space-y-1.5 text-center"
+            >
+              <BookOpen className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">My Listings</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab && setActiveTab('bookings')}
+              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-800 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition flex flex-col items-center space-y-1.5 text-center"
+            >
+              <BookmarkCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">My Bookings</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab && setActiveTab('favorites')}
+              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-red-300 dark:hover:border-red-800 hover:bg-red-50/50 dark:hover:bg-red-950/20 transition flex flex-col items-center space-y-1.5 text-center"
+            >
+              <Heart className="w-5 h-5 text-red-500" />
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Favorites</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab && setActiveTab('complaints')}
+              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-800 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition flex flex-col items-center space-y-1.5 text-center"
+            >
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Complaints</span>
+            </button>
+          </div>
+        </div>
+
       </div>
 
       {/* Edit Form Modal */}
@@ -168,14 +167,14 @@ export const ProfilePage = ({
             Update Profile Information
           </h3>
 
-          <form onSubmit={handleUpdateProfile} className="space-y-4 text-xs">
+          <form onSubmit={saveProfile} className="space-y-4 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Name</label>
                 <input
                   type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
                 />
               </div>
@@ -184,8 +183,8 @@ export const ProfilePage = ({
                 <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Mobile Number</label>
                 <input
                   type="text"
-                  value={mobileNumber}
-                  onChange={(e) => setMobileNumber(e.target.value)}
+                  value={form.mobileNumber}
+                  onChange={(e) => setForm({ ...form, mobileNumber: e.target.value })}
                   className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
                 />
               </div>
@@ -195,8 +194,8 @@ export const ProfilePage = ({
               <div>
                 <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Semester</label>
                 <select
-                  value={semester}
-                  onChange={(e) => setSemester(e.target.value)}
+                  value={form.semester}
+                  onChange={(e) => setForm({ ...form, semester: e.target.value })}
                   className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
                 >
                   <option value="1st Semester">1st Semester</option>
@@ -214,8 +213,8 @@ export const ProfilePage = ({
                 <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Avatar Image URL</label>
                 <input
                   type="text"
-                  value={avatar}
-                  onChange={(e) => setAvatar(e.target.value)}
+                  value={form.avatar}
+                  onChange={(e) => setForm({ ...form, avatar: e.target.value })}
                   className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
                 />
               </div>

@@ -109,5 +109,54 @@ export const api = {
   getAdminComplaints: () => fetchWithAuth('/admin/complaints'),
   updateComplaintStatus: (id, status, adminNote) =>
     fetchWithAuth(`/admin/complaints/${id}`, { method: 'PUT', body: JSON.stringify({ status, adminNote }) }),
-  adminDeleteItem: (id) => fetchWithAuth(`/admin/items/${id}`, { method: 'DELETE' })
+  adminDeleteItem: (id) => fetchWithAuth(`/admin/items/${id}`, { method: 'DELETE' }),
+
+  // Booked dates (per item) — merges active bookings + owner-blocked dates
+  getBookedDates: (itemId) => fetchWithAuth(`/items/${itemId}/booked-dates`),
+
+  // Owner-managed unavailable dates
+  addBlockedDate: (itemId, data) => fetchWithAuth(`/items/${itemId}/blocked-dates`, { method: 'POST', body: JSON.stringify(data) }),
+  removeBlockedDate: (itemId, blockId) => fetchWithAuth(`/items/${itemId}/blocked-dates/${blockId}`, { method: 'DELETE' }),
+
+  // Favorites
+  getFavorites: () => fetchWithAuth('/favorites'),
+  toggleFavorite: (itemId) => fetchWithAuth(`/favorites/${itemId}`, { method: 'POST' })
 };
+
+// ----------------------------------------------------
+// Recently Viewed (client-side only, stored in localStorage)
+// ----------------------------------------------------
+const RECENTLY_VIEWED_KEY = 'cs_sharing_recently_viewed';
+const RECENTLY_VIEWED_MAX = 20;
+
+export function addToRecentlyViewed(item) {
+  try {
+    const raw = localStorage.getItem(RECENTLY_VIEWED_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    const filtered = list.filter((i) => i._id !== item._id);
+    filtered.unshift({
+      _id: item._id,
+      title: item.title,
+      images: item.images,
+      rentPricePerDay: item.rentPricePerDay,
+      category: item.category,
+      viewedAt: new Date().toISOString()
+    });
+    localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(filtered.slice(0, RECENTLY_VIEWED_MAX)));
+  } catch {
+    // ignore storage errors (e.g. private browsing quota)
+  }
+}
+
+export function getRecentlyViewed() {
+  try {
+    const raw = localStorage.getItem(RECENTLY_VIEWED_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function clearRecentlyViewed() {
+  localStorage.removeItem(RECENTLY_VIEWED_KEY);
+}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/apiClient';
-import { PlusCircle, Edit3, Trash2, ToggleLeft, ToggleRight, MapPin, Layers, ExternalLink } from 'lucide-react';
+import { PlusCircle, Edit3, Trash2, ToggleLeft, ToggleRight, MapPin, Layers, ExternalLink, CalendarX2, X } from 'lucide-react';
 
 export const MyListingsPage = ({
   currentUser,
@@ -43,6 +43,61 @@ export const MyListingsPage = ({
       setListings(prev => prev.filter(i => i._id !== itemId));
     } catch (err) {
       alert(err.message || 'Failed to delete listing');
+    }
+  };
+
+  // Manage Unavailable Dates modal state
+  const [manageDatesItem, setManageDatesItem] = useState(null);
+  const [blockStartDate, setBlockStartDate] = useState('');
+  const [blockEndDate, setBlockEndDate] = useState('');
+  const [blockReason, setBlockReason] = useState('');
+  const [blockSubmitting, setBlockSubmitting] = useState(false);
+  const [blockError, setBlockError] = useState('');
+
+  const openManageDates = (item) => {
+    setManageDatesItem(item);
+    setBlockStartDate('');
+    setBlockEndDate('');
+    setBlockReason('');
+    setBlockError('');
+  };
+
+  const handleAddBlockedDate = async (e) => {
+    e.preventDefault();
+    setBlockError('');
+
+    if (!blockStartDate || !blockEndDate) {
+      setBlockError('Please pick both a start and end date');
+      return;
+    }
+
+    try {
+      setBlockSubmitting(true);
+      const res = await api.addBlockedDate(manageDatesItem._id, {
+        startDate: blockStartDate,
+        endDate: blockEndDate,
+        reason: blockReason
+      });
+
+      setManageDatesItem(prev => ({ ...prev, blockedDates: res.blockedDates }));
+      setListings(prev => prev.map(i => i._id === manageDatesItem._id ? { ...i, blockedDates: res.blockedDates } : i));
+      setBlockStartDate('');
+      setBlockEndDate('');
+      setBlockReason('');
+    } catch (err) {
+      setBlockError(err.message || 'Failed to block dates');
+    } finally {
+      setBlockSubmitting(false);
+    }
+  };
+
+  const handleRemoveBlockedDate = async (blockId) => {
+    try {
+      const res = await api.removeBlockedDate(manageDatesItem._id, blockId);
+      setManageDatesItem(prev => ({ ...prev, blockedDates: res.blockedDates }));
+      setListings(prev => prev.map(i => i._id === manageDatesItem._id ? { ...i, blockedDates: res.blockedDates } : i));
+    } catch (err) {
+      alert(err.message || 'Failed to remove blocked dates');
     }
   };
 
@@ -154,6 +209,14 @@ export const MyListingsPage = ({
 
                 <div className="flex items-center space-x-1">
                   <button
+                    onClick={() => openManageDates(item)}
+                    className="p-1.5 text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800"
+                    title="Manage Unavailable Dates"
+                  >
+                    <CalendarX2 className="w-4 h-4" />
+                  </button>
+
+                  <button
                     onClick={() => onViewDetails(item)}
                     className="p-1.5 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800"
                     title="View Item Details"
@@ -182,6 +245,116 @@ export const MyListingsPage = ({
 
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Manage Unavailable Dates Modal */}
+      {manageDatesItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
+                  Manage Unavailable Dates
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
+                  {manageDatesItem.title}
+                </p>
+              </div>
+              <button
+                onClick={() => setManageDatesItem(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Existing blocked ranges */}
+            {(manageDatesItem.blockedDates || []).length > 0 && (
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Currently Blocked
+                </span>
+                <div className="space-y-1.5">
+                  {manageDatesItem.blockedDates.map((d) => (
+                    <div
+                      key={d._id}
+                      className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-950/50 rounded-xl text-xs"
+                    >
+                      <div>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          {new Date(d.startDate).toLocaleDateString('en-IN')} – {new Date(d.endDate).toLocaleDateString('en-IN')}
+                        </span>
+                        {d.reason && (
+                          <p className="text-[10px] text-slate-400">{d.reason}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleRemoveBlockedDate(d._id)}
+                        className="p-1 text-slate-400 hover:text-red-600 rounded-lg"
+                        title="Remove"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {blockError && (
+              <div className="p-2.5 rounded-xl bg-red-50 text-red-600 dark:bg-red-950/60 dark:text-red-300 text-xs font-semibold">
+                {blockError}
+              </div>
+            )}
+
+            {/* Add new blocked range form */}
+            <form onSubmit={handleAddBlockedDate} className="space-y-3">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                Block New Dates
+              </span>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">From</label>
+                  <input
+                    type="date"
+                    required
+                    value={blockStartDate}
+                    onChange={(e) => setBlockStartDate(e.target.value)}
+                    className="w-full p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">To</label>
+                  <input
+                    type="date"
+                    required
+                    min={blockStartDate}
+                    value={blockEndDate}
+                    onChange={(e) => setBlockEndDate(e.target.value)}
+                    className="w-full p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Reason (optional)</label>
+                <input
+                  type="text"
+                  value={blockReason}
+                  onChange={(e) => setBlockReason(e.target.value)}
+                  placeholder="e.g. Out of town, item under repair"
+                  className="w-full p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={blockSubmitting}
+                className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition disabled:opacity-50"
+              >
+                {blockSubmitting ? 'Blocking...' : 'Block These Dates'}
+              </button>
+            </form>
+          </div>
         </div>
       )}
 

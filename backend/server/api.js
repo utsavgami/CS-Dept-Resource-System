@@ -2,6 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { db } from './db.js';
+import { createUserRouter } from './routes/userRoutes.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cs_department_jwt_secret_key_2026';
 
@@ -119,6 +120,7 @@ apiRouter.post('/auth/register', async (req, res) => {
     complaintCount: 0,
     averageRating: 5.0,
     totalRatings: 0,
+    favorites: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -197,52 +199,8 @@ apiRouter.get('/auth/me', authenticateToken, (req, res) => {
   return res.json({ user: req.user });
 });
 
-// ----------------------------------------------------
-// USER APIs
-// ----------------------------------------------------
-
-// GET /api/users/:id
-apiRouter.get('/users/:id', (req, res) => {
-  const user = db.users.find(u => u._id === req.params.id);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
-  }
-
-  const userListings = db.items.filter(i => i.ownerId === user._id);
-  const userBookings = db.bookings.filter(b => b.borrowerId === user._id && b.status === 'Completed');
-  const userRatings = db.ratings.filter(r => r.revieweeId === user._id);
-
-  // Return non-sensitive profile
-  const { ...profile } = user;
-  return res.json({
-    user: profile,
-    listingsCount: userListings.length,
-    borrowedCount: userBookings.length,
-    ratings: userRatings
-  });
-});
-
-// PUT /api/users/profile
-apiRouter.put('/users/profile', authenticateToken, (req, res) => {
-  const user = req.user;
-  const { name, mobileNumber, semester, avatar } = req.body;
-
-  if (name) user.name = name;
-  if (mobileNumber) user.mobileNumber = mobileNumber;
-  if (semester) user.semester = semester;
-  if (avatar) user.avatar = avatar;
-  user.updatedAt = new Date().toISOString();
-
-  // Update name/avatar in owned items & bookings
-  db.items.forEach(item => {
-    if (item.ownerId === user._id) {
-      item.ownerName = user.name;
-      item.ownerAvatar = user.avatar;
-    }
-  });
-
-  return res.json({ message: 'Profile updated successfully', user });
-});
+// USER APIs: route -> controller -> model
+apiRouter.use('/users', createUserRouter(authenticateToken));
 
 // ----------------------------------------------------
 // ITEM APIs
@@ -348,6 +306,7 @@ apiRouter.post('/items', authenticateToken, (req, res) => {
     availability: true,
     condition: condition || 'Good',
     pickupLocation,
+    blockedDates: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -405,6 +364,152 @@ apiRouter.delete('/items/:id', authenticateToken, (req, res) => {
   return res.json({ message: 'Listing deleted successfully' });
 });
 
+// GET /api/items/:id/booked-dates
+// Returns the date ranges that are unavailable for this item, from two
+// sources: (1) active bookings (Pending/Accepted) and (2) dates the owner
+// manually blocked (e.g. "I'm out of town"). Each range is tagged with a
+// `source` so the frontend can show why it's unavailable.
+apiRouter.get('/items/:id/booked-dates', (req, res) => {
+  const itemId = req.params.id;
+  const item = db.items.find(i => i._id === itemId);
+  if (!item) {
+    return res.status(404).json({ error: 'Item not found' });
+  }
+
+  const fromBookings = db.bookings
+    .filter(b => b.itemId === itemId && (b.status === 'Pending' || b.status === 'Accepted'))
+    .map(b => ({
+      startDate: b.startDate,
+      endDate: b.endDate,
+      status: b.status,
+      source: 'booking'
+    }));
+
+  const fromOwner = (item.blockedDates || []).map(d => ({
+    _id: d._id,
+    startDate: d.startDate,
+    endDate: d.endDate,
+    reason: d.reason,
+    source: 'owner'
+  }));
+
+  return res.json({ bookedRanges: [...fromBookings, ...fromOwner] });
+});
+
+// POST /api/items/:id/blocked-dates
+// Owner (or admin) manually marks a date range as unavailable, independent
+// of any booking — e.g. the owner is traveling and the item can't be
+// picked up/dropped off during that window.
+apiRouter.post('/items/:id/blocked-dates', authenticateToken, (req, res) => {
+  const user = req.user;
+  const item = db.items.find(i => i._id === req.params.id);
+
+  if (!item) {
+    return res.status(404).json({ error: 'Item not found' });
+  }
+
+  if (item.ownerId !== user._id && user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only the item owner can block dates for this listing' });
+  }
+
+  const { startDate, endDate, reason } = req.body;
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'Start date and end date are required' });
+  }
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return res.status(400).json({ error: 'Invalid start or end date' });
+  }
+
+  if (end < start) {
+    return res.status(400).json({ error: 'End date cannot be before start date' });
+  }
+
+  if (!item.blockedDates) item.blockedDates = [];
+
+  const newBlock = {
+    _id: `blk_${Date.now()}`,
+    startDate,
+    endDate,
+    reason: reason || 'Owner unavailable'
+  };
+
+  item.blockedDates.push(newBlock);
+  item.updatedAt = new Date().toISOString();
+
+  return res.status(201).json({ message: 'Dates blocked successfully', blockedDate: newBlock, blockedDates: item.blockedDates });
+});
+
+// DELETE /api/items/:id/blocked-dates/:blockId
+apiRouter.delete('/items/:id/blocked-dates/:blockId', authenticateToken, (req, res) => {
+  const user = req.user;
+  const item = db.items.find(i => i._id === req.params.id);
+
+  if (!item) {
+    return res.status(404).json({ error: 'Item not found' });
+  }
+
+  if (item.ownerId !== user._id && user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only the item owner can modify blocked dates for this listing' });
+  }
+
+  const index = (item.blockedDates || []).findIndex(d => d._id === req.params.blockId);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Blocked date entry not found' });
+  }
+
+  item.blockedDates.splice(index, 1);
+  item.updatedAt = new Date().toISOString();
+
+  return res.json({ message: 'Blocked dates removed', blockedDates: item.blockedDates });
+});
+
+// ----------------------------------------------------
+// FAVORITES / WISHLIST APIs
+// ----------------------------------------------------
+
+// GET /api/favorites
+apiRouter.get('/favorites', authenticateToken, (req, res) => {
+  const user = req.user;
+  const favoriteIds = user.favorites || [];
+  const favoriteItems = db.items.filter(i => favoriteIds.includes(i._id));
+  return res.json({ items: favoriteItems });
+});
+
+// POST /api/favorites/:itemId  (toggles on/off)
+apiRouter.post('/favorites/:itemId', authenticateToken, (req, res) => {
+  const user = req.user;
+  const { itemId } = req.params;
+
+  const item = db.items.find(i => i._id === itemId);
+  if (!item) {
+    return res.status(404).json({ error: 'Item not found' });
+  }
+
+  if (!user.favorites) user.favorites = [];
+
+  const existingIndex = user.favorites.indexOf(itemId);
+  let isFavorite;
+
+  if (existingIndex === -1) {
+    user.favorites.push(itemId);
+    isFavorite = true;
+  } else {
+    user.favorites.splice(existingIndex, 1);
+    isFavorite = false;
+  }
+
+  return res.json({
+    message: isFavorite ? 'Added to favorites' : 'Removed from favorites',
+    isFavorite,
+    favorites: user.favorites
+  });
+});
+
 // ----------------------------------------------------
 // BOOKING APIs
 // ----------------------------------------------------
@@ -424,16 +529,63 @@ apiRouter.post('/bookings', authenticateToken, (req, res) => {
   }
 
   if (!item.availability) {
-    return res.status(400).json({ error: 'Item is currently unavailable for rental' });
+    return res.status(400).json({ error: 'This listing has been turned off by the owner' });
   }
 
   if (item.ownerId === borrower._id) {
     return res.status(400).json({ error: 'You cannot rent your own listed item' });
   }
 
-  // Calculate rental days
   const start = new Date(startDate);
   const end = new Date(endDate);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return res.status(400).json({ error: 'Invalid start or end date' });
+  }
+
+  if (end < start) {
+    return res.status(400).json({ error: 'End date cannot be before start date' });
+  }
+
+  // Booking window rules: cannot book in the past, and cannot book more
+  // than 30 days out from today.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const maxBookingDate = new Date(today);
+  maxBookingDate.setDate(maxBookingDate.getDate() + 30);
+
+  if (start < today) {
+    return res.status(400).json({ error: 'Booking start date cannot be in the past' });
+  }
+
+  if (end > maxBookingDate) {
+    return res.status(400).json({ error: 'Bookings can only be made up to 30 days in advance' });
+  }
+
+  // Date-range overlap check: block only if this item already has an
+  // active (Pending/Accepted) booking OR an owner-blocked range whose
+  // dates overlap the requested range. Other non-overlapping dates
+  // remain bookable.
+  const hasBookingOverlap = db.bookings.some(b => {
+    if (b.itemId !== itemId) return false;
+    if (b.status !== 'Pending' && b.status !== 'Accepted') return false;
+    const bStart = new Date(b.startDate);
+    const bEnd = new Date(b.endDate);
+    return start <= bEnd && end >= bStart;
+  });
+
+  const hasOwnerBlockOverlap = (item.blockedDates || []).some(d => {
+    const dStart = new Date(d.startDate);
+    const dEnd = new Date(d.endDate);
+    return start <= dEnd && end >= dStart;
+  });
+
+  if (hasBookingOverlap || hasOwnerBlockOverlap) {
+    return res.status(400).json({ error: 'This item is already unavailable for some of the selected dates. Check the available dates below.' });
+  }
+
+  // Calculate rental days
   const diffTime = Math.abs(end.getTime() - start.getTime());
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
 
@@ -463,9 +615,6 @@ apiRouter.post('/bookings', authenticateToken, (req, res) => {
   };
 
   db.bookings.unshift(newBooking);
-  // Mark item as unavailable immediately after booking request
-  item.availability = false;
-  item.updatedAt = new Date().toISOString();
 
   // Notify Owner
   db.notifications.push({
@@ -520,14 +669,10 @@ apiRouter.put('/bookings/:id/status', authenticateToken, (req, res) => {
   booking.status = status;
   booking.updatedAt = new Date().toISOString();
 
-  // If accepted, update item availability
-  if (status === 'Accepted') {
-    const item = db.items.find(i => i._id === booking.itemId);
-    if (item) item.availability = false;
-  } else if (status === 'Completed' || status === 'Rejected') {
-    const item = db.items.find(i => i._id === booking.itemId);
-    if (item) item.availability = true;
-  }
+  // Note: item.availability is now a manual owner on/off switch only
+  // (toggled from My Listings). Per-date booking conflicts are handled
+  // separately via date-range overlap checks, so status changes here no
+  // longer touch item.availability.
 
   // Send Notification to counterparty
   const targetUserId = isOwner ? booking.borrowerId : booking.ownerId;
@@ -562,6 +707,12 @@ apiRouter.get('/chat/messages/:bookingId', authenticateToken, (req, res) => {
     return res.status(403).json({ error: 'Access denied to this booking chat' });
   }
 
+  // Chat only opens once the owner has accepted the booking (or later,
+  // once completed). Pending/Rejected requests have no chat yet.
+  if (booking.status !== 'Accepted' && booking.status !== 'Completed' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Chat is only available after the owner accepts this booking' });
+  }
+
   const messages = db.messages.filter(m => m.bookingId === bookingId);
   return res.json({ messages, booking });
 });
@@ -578,6 +729,14 @@ apiRouter.post('/chat/messages', authenticateToken, (req, res) => {
   const booking = db.bookings.find(b => b._id === bookingId);
   if (!booking) {
     return res.status(404).json({ error: 'Booking reference not found' });
+  }
+
+  if (booking.borrowerId !== sender._id && booking.ownerId !== sender._id && sender.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied to this booking chat' });
+  }
+
+  if (booking.status !== 'Accepted' && booking.status !== 'Completed' && sender.role !== 'admin') {
+    return res.status(403).json({ error: 'Chat is only available after the owner accepts this booking' });
   }
 
   const receiverId = booking.borrowerId === sender._id ? booking.ownerId : booking.borrowerId;

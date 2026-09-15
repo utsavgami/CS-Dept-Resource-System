@@ -33,6 +33,15 @@ async function startServer() {
     });
 
     socket.on('send_chat_message', (data) => {
+      // Only allow chat once the owner has accepted the booking (or later,
+      // once completed) — same rule enforced by the REST /chat/messages route.
+      const booking = db.bookings.find(b => b._id === data.bookingId);
+      if (!booking || (booking.status !== 'Accepted' && booking.status !== 'Completed')) {
+        return; // silently drop; the sender's REST call will already have
+                // been rejected with a proper error, this just guards the
+                // realtime path too.
+      }
+
       const newMsg = {
         _id: `msg_${Date.now()}`,
         bookingId: data.bookingId,
@@ -71,28 +80,25 @@ async function startServer() {
   // Mount API router FIRST
   app.use('/api', apiRouter);
 
+  // Path to the frontend project (sibling folder: ../frontend)
+  const frontendRoot = path.join(process.cwd(), '..', 'frontend');
+
   // Vite middleware or production static serving
-const frontendPath = path.resolve(process.cwd(), '../frontend');
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      root: frontendRoot,
+      server: { middlewareMode: true },
+      appType: 'spa'
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(frontendRoot, 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
 
-if (process.env.NODE_ENV !== 'production') {
-  const vite = await createViteServer({
-    root: frontendPath,
-    server: {
-      middlewareMode: true
-    },
-    appType: 'spa'
-  });
-
-  app.use(vite.middlewares);
-} else {
-  const distPath = path.join(frontendPath, 'dist');
-
-  app.use(express.static(distPath));
-
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
-  });
-}
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`====================================================`);
     console.log(`CS Department Resource Sharing System Server running`);

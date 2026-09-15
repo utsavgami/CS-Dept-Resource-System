@@ -35,6 +35,7 @@ export class DatabaseStore {
       complaintCount: 0,
       averageRating: 5.0,
       totalRatings: 0,
+      favorites: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -54,6 +55,7 @@ export class DatabaseStore {
       complaintCount: 0,
       averageRating: 4.9,
       totalRatings: 12,
+      favorites: [],
       createdAt: new Date('2025-01-10').toISOString(),
       updatedAt: new Date('2025-01-10').toISOString()
     };
@@ -73,6 +75,7 @@ export class DatabaseStore {
       complaintCount: 0,
       averageRating: 4.8,
       totalRatings: 8,
+      favorites: [],
       createdAt: new Date('2025-01-15').toISOString(),
       updatedAt: new Date('2025-01-15').toISOString()
     };
@@ -92,6 +95,7 @@ export class DatabaseStore {
       complaintCount: 1,
       averageRating: 4.2,
       totalRatings: 5,
+      favorites: [],
       createdAt: new Date('2025-01-20').toISOString(),
       updatedAt: new Date('2025-01-20').toISOString()
     };
@@ -111,6 +115,7 @@ export class DatabaseStore {
       complaintCount: 4, // 1 away from auto-block!
       averageRating: 2.5,
       totalRatings: 4,
+      favorites: [],
       createdAt: new Date('2025-02-01').toISOString(),
       updatedAt: new Date('2025-02-01').toISOString()
     };
@@ -138,6 +143,7 @@ export class DatabaseStore {
         availability: true,
         condition: 'Like New',
         pickupLocation: 'CS Lab 3, 2nd Floor Engineering Building',
+        blockedDates: [],
         createdAt: new Date('2025-02-10').toISOString(),
         updatedAt: new Date('2025-02-10').toISOString()
       },
@@ -160,6 +166,7 @@ export class DatabaseStore {
         availability: true,
         condition: 'Good',
         pickupLocation: 'CS Department Library Lounge',
+        blockedDates: [],
         createdAt: new Date('2025-02-12').toISOString(),
         updatedAt: new Date('2025-02-12').toISOString()
       },
@@ -182,6 +189,7 @@ export class DatabaseStore {
         availability: true,
         condition: 'Like New',
         pickupLocation: 'CS Main Hallway - Near Office 204',
+        blockedDates: [],
         createdAt: new Date('2025-02-14').toISOString(),
         updatedAt: new Date('2025-02-14').toISOString()
       },
@@ -204,6 +212,7 @@ export class DatabaseStore {
         availability: true,
         condition: 'Good',
         pickupLocation: 'Microprocessor Lab 102',
+        blockedDates: [],
         createdAt: new Date('2025-02-15').toISOString(),
         updatedAt: new Date('2025-02-15').toISOString()
       },
@@ -226,6 +235,7 @@ export class DatabaseStore {
         availability: true,
         condition: 'New',
         pickupLocation: 'Student Activity Center, CS Wing',
+        blockedDates: [],
         createdAt: new Date('2025-02-18').toISOString(),
         updatedAt: new Date('2025-02-18').toISOString()
       },
@@ -248,6 +258,7 @@ export class DatabaseStore {
         availability: true,
         condition: 'Like New',
         pickupLocation: 'CS Graduate Research Center',
+        blockedDates: [],
         createdAt: new Date('2025-02-20').toISOString(),
         updatedAt: new Date('2025-02-20').toISOString()
       },
@@ -270,6 +281,7 @@ export class DatabaseStore {
         availability: true,
         condition: 'Good',
         pickupLocation: 'Campus Sports Complex Entrance',
+        blockedDates: [],
         createdAt: new Date('2025-02-22').toISOString(),
         updatedAt: new Date('2025-02-22').toISOString()
       }

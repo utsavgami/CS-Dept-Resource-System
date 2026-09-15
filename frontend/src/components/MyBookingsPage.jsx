@@ -195,14 +195,16 @@ export const MyBookingsPage = ({
                 {/* Right Actions */}
                 <div className="flex flex-wrap items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800 shrink-0">
 
-                  {/* Chat button */}
-                  <button
-                    onClick={() => onOpenChat(b._id)}
-                    className="px-3 py-2 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 rounded-xl text-xs font-bold hover:bg-blue-100 transition flex items-center space-x-1.5"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    <span>Open Chat</span>
-                  </button>
+                  {/* Chat button — only once the owner has accepted (or after completion) */}
+                  {(b.status === 'Accepted' || b.status === 'Completed') && (
+                    <button
+                      onClick={() => onOpenChat(b._id)}
+                      className="px-3 py-2 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 rounded-xl text-xs font-bold hover:bg-blue-100 transition flex items-center space-x-1.5"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Open Chat</span>
+                    </button>
+                  )}
 
                   {/* Owner Accept / Reject buttons */}
                   {isOwner && b.status === 'Pending' && (

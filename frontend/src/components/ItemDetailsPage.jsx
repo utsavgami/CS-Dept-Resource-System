@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { api } from "../lib/apiClient";
+import React, { useState, useEffect, useMemo } from "react";
+import { api, addToRecentlyViewed } from "../lib/apiClient";
 import {
   ArrowLeft,
   Calendar,
@@ -14,7 +14,18 @@ import {
   Phone,
   Mail,
   DollarSign,
+  Heart,
+  CalendarX2,
 } from "lucide-react";
+
+// yyyy-mm-dd string for a Date object, in local time (not UTC), so date
+// inputs and comparisons line up with what the user actually picked.
+function toDateInputValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 export const ItemDetailsPage = ({
   item,
@@ -41,9 +52,59 @@ export const ItemDetailsPage = ({
   const [bookingSuccessMsg, setBookingSuccessMsg] = useState("");
   const [availabilityAfter, setAvailabilityAfter] = useState(null);
 
+  // Date-range availability
+  const [bookedRanges, setBookedRanges] = useState([]);
+  const [datesLoading, setDatesLoading] = useState(true);
+
+  // Favorites
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
+
+  // Booking window: today up to 30 days from today
+  const todayStr = useMemo(() => toDateInputValue(new Date()), []);
+  const maxBookingStr = useMemo(() => {
+    const max = new Date();
+    max.setDate(max.getDate() + 30);
+    return toDateInputValue(max);
+  }, []);
+
   useEffect(() => {
     loadOwnerDetails();
+    loadBookedDates();
+    addToRecentlyViewed(item);
+
+    if (currentUser?.favorites) {
+      setIsFavorite(currentUser.favorites.includes(item._id));
+    }
   }, [item._id]);
+
+  const loadBookedDates = async () => {
+    try {
+      setDatesLoading(true);
+      const res = await api.getBookedDates(item._id);
+      setBookedRanges(res.bookedRanges || []);
+    } catch {
+      // ignore
+    } finally {
+      setDatesLoading(false);
+    }
+  };
+
+  const handleToggleFavorite = async () => {
+    if (!currentUser) {
+      onRequireLogin();
+      return;
+    }
+    try {
+      setFavoriteLoading(true);
+      const res = await api.toggleFavorite(item._id);
+      setIsFavorite(res.isFavorite);
+    } catch (err) {
+      alert(err.message || "Failed to update favorites");
+    } finally {
+      setFavoriteLoading(false);
+    }
+  };
 
   const loadOwnerDetails = async () => {
     try {
@@ -69,6 +130,13 @@ export const ItemDetailsPage = ({
   const rentalFee = rentalDays * item.rentPricePerDay;
   const totalAmount = rentalFee + item.securityDeposit;
 
+  // Does the currently selected date range overlap any already-booked range?
+  const selectedRangeOverlaps = bookedRanges.some((r) => {
+    const rStart = new Date(r.startDate);
+    const rEnd = new Date(r.endDate);
+    return start <= rEnd && end >= rStart;
+  });
+
   const handleBookNow = async (e) => {
     e.preventDefault();
     setBookingError("");
@@ -85,7 +153,12 @@ export const ItemDetailsPage = ({
     }
 
     if (!item.availability) {
-      setBookingError("Item is currently marked as unavailable.");
+      setBookingError("This listing has been turned off by the owner.");
+      return;
+    }
+
+    if (selectedRangeOverlaps) {
+      setBookingError("Those dates overlap an existing booking for this item. Pick different dates below.");
       return;
     }
 
@@ -143,11 +216,23 @@ export const ItemDetailsPage = ({
                 }`}
               >
                 {item.availability
-                  ? "Available for Rent"
-                  : availabilityAfter
-                    ? `Available After ${new Date(availabilityAfter).toLocaleDateString("en-IN")}`
-                    : "Currently Rented"}
+                  ? "Listed for Rent"
+                  : "Paused by Owner"}
               </span>
+
+              {/* Favorite toggle */}
+              <button
+                onClick={handleToggleFavorite}
+                disabled={favoriteLoading}
+                title={isFavorite ? "Remove from favorites" : "Save to favorites"}
+                className="absolute top-4 right-4 p-2 rounded-full bg-white/90 dark:bg-slate-900/90 shadow-md hover:scale-105 transition disabled:opacity-50"
+              >
+                <Heart
+                  className={`w-4 h-4 ${
+                    isFavorite ? "fill-red-500 text-red-500" : "text-slate-500"
+                  }`}
+                />
+              </button>
             </div>
 
             {/* Thumbnail switcher */}
@@ -322,6 +407,35 @@ export const ItemDetailsPage = ({
               </div>
             )}
 
+            {/* Already Booked / Owner-Blocked Dates */}
+            {!datesLoading && bookedRanges.length > 0 && (
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-1.5">
+                <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 flex items-center space-x-1.5">
+                  <CalendarX2 className="w-3.5 h-3.5" />
+                  <span>Unavailable Dates — pick dates outside these ranges</span>
+                </span>
+                <ul className="text-[11px] text-amber-700 dark:text-amber-400 space-y-0.5">
+                  {bookedRanges.map((r, idx) => (
+                    <li key={idx}>
+                      {new Date(r.startDate).toLocaleDateString("en-IN")} – {new Date(r.endDate).toLocaleDateString("en-IN")}
+                      {r.source === "owner"
+                        ? ` (owner unavailable${r.reason ? `: ${r.reason}` : ""})`
+                        : r.status === "Pending"
+                          ? " (pending booking)"
+                          : " (booked)"}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {selectedRangeOverlaps && (
+              <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-[11px] font-semibold text-red-700 dark:text-red-300 flex items-center space-x-1.5">
+                <CalendarX2 className="w-3.5 h-3.5 shrink-0" />
+                <span>Selected dates overlap an existing booking.</span>
+              </div>
+            )}
+
             <form onSubmit={handleBookNow} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
@@ -332,6 +446,8 @@ export const ItemDetailsPage = ({
                   <input
                     type="date"
                     required
+                    min={todayStr}
+                    max={maxBookingStr}
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
                     className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs"
@@ -348,11 +464,16 @@ export const ItemDetailsPage = ({
                   <input
                     type="date"
                     required
+                    min={startDate || todayStr}
+                    max={maxBookingStr}
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
                     className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs"
                   />
                 </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Bookings can be made from today up to {new Date(maxBookingStr).toLocaleDateString("en-IN")} (30 days ahead).
+                </p>
               </div>
 
               {/* Cost Calculation Summary */}
@@ -387,7 +508,7 @@ export const ItemDetailsPage = ({
 
               <button
                 type="submit"
-                disabled={bookingLoading || !item.availability}
+                disabled={bookingLoading || !item.availability || selectedRangeOverlaps}
                 className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-600/30 transition flex items-center justify-center space-x-2 disabled:opacity-50"
               >
                 {bookingLoading ? (

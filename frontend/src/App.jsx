@@ -13,6 +13,7 @@ import { MyBookingsPage } from './components/MyBookingsPage';
 import { MessagesPage } from './components/MessagesPage';
 import { ComplaintsPage } from './components/ComplaintsPage';
 import { ProfilePage } from './components/ProfilePage';
+import { FavoritesPage } from './components/FavoritesPage';
 import { AdminDashboardPage } from './components/AdminDashboardPage';
 import { DocsPage } from './components/DocsPage';
 import { LoginPage } from './components/LoginPage';
@@ -214,7 +215,7 @@ export default function App() {
         )}
 
         {/* Chat Messages */}
-        {/* {activeTab === 'messages' && (
+        {activeTab === 'messages' && (
           currentUser ? (
             <MessagesPage
               currentUser={currentUser}
@@ -227,7 +228,7 @@ export default function App() {
               onOpenDemoModal={() => setShowDemoModal(true)}
             />
           )
-        )} */}
+        )}
 
         {/* Complaints Protocol */}
         {activeTab === 'complaints' && (
@@ -251,7 +252,21 @@ export default function App() {
             <ProfilePage
               currentUser={currentUser}
               onUserUpdated={(updated) => setCurrentUser(updated)}
+              setActiveTab={setActiveTab}
             />
+          ) : (
+            <LoginPage
+              onSuccess={handleLoginSuccess}
+              onSwitchToRegister={() => setActiveTab('register')}
+              onOpenDemoModal={() => setShowDemoModal(true)}
+            />
+          )
+        )}
+
+        {/* Favorites & Recently Viewed */}
+        {activeTab === 'favorites' && (
+          currentUser ? (
+            <FavoritesPage onSelectItem={handleSelectItem} />
           ) : (
             <LoginPage
               onSuccess={handleLoginSuccess}
