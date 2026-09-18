@@ -1,445 +1,483 @@
+import pg from 'pg';
 import bcrypt from 'bcryptjs';
 
-// In-Memory Persistent Store with initial seed data
-export class DatabaseStore {
-  constructor() {
-    this.users = [];
-    this.items = [];
-    this.bookings = [];
-    this.messages = [];
-    this.complaints = [];
-    this.ratings = [];
-    this.notifications = [];
-    this.initialized = false;
-  }
+const { Pool } = pg;
 
-  async init() {
-    if (this.initialized) return;
-
-    // Seed default admin and CS department students
-    const hashedAdminPassword = await bcrypt.hash('admin123', 10);
-    const hashedStudentPassword = await bcrypt.hash('student123', 10);
-
-    const defaultAdmin = {
-      _id: 'usr_admin_001',
-      name: 'CS Department Admin',
-      email: '0801AD000001@gmail.com',
-      enrollmentNumber: '0801AD000001',
-      mobileNumber: '0000000000',
-      department: 'Computer Science & Engineering',
-      semester: 'Faculty / Admin',
-      role: 'admin',
-      verified: true,
-      isBlocked: false,
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=CSAdmin',
-      complaintCount: 0,
-      averageRating: 5.0,
-      totalRatings: 0,
-      favorites: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    const student1 = {
-      _id: 'usr_std_101',
-      name: 'Alex Chen',
-      email: 'alex.chen@cs.edu',
-      enrollmentNumber: 'CS2023001',
-      mobileNumber: '+1-555-234-5678',
-      department: 'Computer Science & Engineering',
-      semester: '6th Semester',
-      role: 'student',
-      verified: true,
-      isBlocked: false,
-      avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200',
-      complaintCount: 0,
-      averageRating: 4.9,
-      totalRatings: 12,
-      favorites: [],
-      createdAt: new Date('2025-01-10').toISOString(),
-      updatedAt: new Date('2025-01-10').toISOString()
-    };
-
-    const student2 = {
-      _id: 'usr_std_102',
-      name: 'Priya Sharma',
-      email: 'priya.sharma@cs.edu',
-      enrollmentNumber: 'CS2023045',
-      mobileNumber: '+1-555-876-5432',
-      department: 'Computer Science & Engineering',
-      semester: '4th Semester',
-      role: 'student',
-      verified: true,
-      isBlocked: false,
-      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200',
-      complaintCount: 0,
-      averageRating: 4.8,
-      totalRatings: 8,
-      favorites: [],
-      createdAt: new Date('2025-01-15').toISOString(),
-      updatedAt: new Date('2025-01-15').toISOString()
-    };
-
-    const student3 = {
-      _id: 'usr_std_103',
-      name: 'Marcus Vance',
-      email: 'marcus.vance@cs.edu',
-      enrollmentNumber: 'CS2022088',
-      mobileNumber: '+1-555-333-9988',
-      department: 'Computer Science & Engineering',
-      semester: '8th Semester',
-      role: 'student',
-      verified: true,
-      isBlocked: false,
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200',
-      complaintCount: 1,
-      averageRating: 4.2,
-      totalRatings: 5,
-      favorites: [],
-      createdAt: new Date('2025-01-20').toISOString(),
-      updatedAt: new Date('2025-01-20').toISOString()
-    };
-
-    const student4 = {
-      _id: 'usr_std_104',
-      name: 'David Miller (Risky User)',
-      email: 'david.m@cs.edu',
-      enrollmentNumber: 'CS2023099',
-      mobileNumber: '+1-555-444-1122',
-      department: 'Computer Science & Engineering',
-      semester: '2nd Semester',
-      role: 'student',
-      verified: true,
-      isBlocked: false,
-      avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200',
-      complaintCount: 4, // 1 away from auto-block!
-      averageRating: 2.5,
-      totalRatings: 4,
-      favorites: [],
-      createdAt: new Date('2025-02-01').toISOString(),
-      updatedAt: new Date('2025-02-01').toISOString()
-    };
-
-    this.users = [student1, student2, student3, student4, defaultAdmin];
-
-    // Seed Items
-    this.items = [
-      {
-        _id: 'itm_001',
-        ownerId: student1._id,
-        ownerName: student1.name,
-        ownerEmail: student1.email,
-        ownerPhone: student1.mobileNumber,
-        ownerAvatar: student1.avatar,
-        ownerSemester: student1.semester,
-        title: 'Texas Instruments TI-84 Plus CE Graphing Calculator',
-        category: 'Calculators',
-        description: 'Perfect for Linear Algebra, Discrete Math, and Engineering Mathematics. Battery lasts 2 weeks. Comes with charging cable and sliding protective cover.',
-        images: [
-          'https://images.unsplash.com/photo-1587145820266-a5951ee6f620?auto=format&fit=crop&q=80&w=800'
-        ],
-        rentPricePerDay: 5,
-        securityDeposit: 30,
-        availability: true,
-        condition: 'Like New',
-        pickupLocation: 'CS Lab 3, 2nd Floor Engineering Building',
-        blockedDates: [],
-        createdAt: new Date('2025-02-10').toISOString(),
-        updatedAt: new Date('2025-02-10').toISOString()
-      },
-      {
-        _id: 'itm_002',
-        ownerId: student2._id,
-        ownerName: student2.name,
-        ownerEmail: student2.email,
-        ownerPhone: student2.mobileNumber,
-        ownerAvatar: student2.avatar,
-        ownerSemester: student2.semester,
-        title: 'Raspberry Pi 4 Model B (8GB RAM) Starter Kit',
-        category: 'Electronics',
-        description: 'Includes 64GB MicroSD card with Raspbian preloaded, official red/white case, micro-HDMI cable, USB-C power supply, and breadboard sensor sensors kit for Embedded Systems / IoT projects.',
-        images: [
-          'https://images.unsplash.com/photo-1629654297299-c8506221ca97?auto=format&fit=crop&q=80&w=800'
-        ],
-        rentPricePerDay: 8,
-        securityDeposit: 50,
-        availability: true,
-        condition: 'Good',
-        pickupLocation: 'CS Department Library Lounge',
-        blockedDates: [],
-        createdAt: new Date('2025-02-12').toISOString(),
-        updatedAt: new Date('2025-02-12').toISOString()
-      },
-      {
-        _id: 'itm_003',
-        ownerId: student1._id,
-        ownerName: student1.name,
-        ownerEmail: student1.email,
-        ownerPhone: student1.mobileNumber,
-        ownerAvatar: student1.avatar,
-        ownerSemester: student1.semester,
-        title: 'Introduction to Algorithms (CLRS 4th Edition - Hardcover)',
-        category: 'Books',
-        description: 'The Bible of Computer Science. Essential for Data Structures & Algorithms (CS 301) and Competitive Programming. No highlighting or written notes inside.',
-        images: [
-          'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=800'
-        ],
-        rentPricePerDay: 3,
-        securityDeposit: 25,
-        availability: true,
-        condition: 'Like New',
-        pickupLocation: 'CS Main Hallway - Near Office 204',
-        blockedDates: [],
-        createdAt: new Date('2025-02-14').toISOString(),
-        updatedAt: new Date('2025-02-14').toISOString()
-      },
-      {
-        _id: 'itm_004',
-        ownerId: student3._id,
-        ownerName: student3.name,
-        ownerEmail: student3.email,
-        ownerPhone: student3.mobileNumber,
-        ownerAvatar: student3.avatar,
-        ownerSemester: student3.semester,
-        title: 'Rigol DS1054Z 50MHz Digital Storage Oscilloscope',
-        category: 'Lab Equipment',
-        description: '4 Channel Digital Oscilloscope for Hardware Logic Design, Digital Circuits lab, and Microprocessor experiments. Fully functional with original probes.',
-        images: [
-          'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&q=80&w=800'
-        ],
-        rentPricePerDay: 15,
-        securityDeposit: 100,
-        availability: true,
-        condition: 'Good',
-        pickupLocation: 'Microprocessor Lab 102',
-        blockedDates: [],
-        createdAt: new Date('2025-02-15').toISOString(),
-        updatedAt: new Date('2025-02-15').toISOString()
-      },
-      {
-        _id: 'itm_005',
-        ownerId: student2._id,
-        ownerName: student2.name,
-        ownerEmail: student2.email,
-        ownerPhone: student2.mobileNumber,
-        ownerAvatar: student2.avatar,
-        ownerSemester: student2.semester,
-        title: 'Arduino Mega 2560 Ultimate Project Component Kit',
-        category: 'Project Components',
-        description: 'Over 100 components: Stepper motors, LCD displays, RFID reader, Ultrasonic sensors, Wi-Fi ESP8266 module, jumper wires, relays. Ideal for Capstone CS/IoT projects.',
-        images: [
-          'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=80&w=800'
-        ],
-        rentPricePerDay: 6,
-        securityDeposit: 35,
-        availability: true,
-        condition: 'New',
-        pickupLocation: 'Student Activity Center, CS Wing',
-        blockedDates: [],
-        createdAt: new Date('2025-02-18').toISOString(),
-        updatedAt: new Date('2025-02-18').toISOString()
-      },
-      {
-        _id: 'itm_006',
-        ownerId: student3._id,
-        ownerName: student3.name,
-        ownerEmail: student3.email,
-        ownerPhone: student3.mobileNumber,
-        ownerAvatar: student3.avatar,
-        ownerSemester: student3.semester,
-        title: 'Dell Thunderbolt 4 Docking Station (180W PD)',
-        category: 'Laptop Accessories',
-        description: 'Supports dual 4K monitors, gigabit Ethernet, 4 USB-A ports, 2 USB-C ports, and high-speed power delivery for CS students doing heavy workstation setups.',
-        images: [
-          'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&q=80&w=800'
-        ],
-        rentPricePerDay: 4,
-        securityDeposit: 40,
-        availability: true,
-        condition: 'Like New',
-        pickupLocation: 'CS Graduate Research Center',
-        blockedDates: [],
-        createdAt: new Date('2025-02-20').toISOString(),
-        updatedAt: new Date('2025-02-20').toISOString()
-      },
-      {
-        _id: 'itm_007',
-        ownerId: student1._id,
-        ownerName: student1.name,
-        ownerEmail: student1.email,
-        ownerPhone: student1.mobileNumber,
-        ownerAvatar: student1.avatar,
-        ownerSemester: student1.semester,
-        title: 'Yonex Arcsaber Badminton Racket & Shuttlecocks Set',
-        category: 'Sports Items',
-        description: 'Great for inter-department sports tournaments or weekend breaks between coding hackathons! Comes with two rackets and 3 nylon shuttles.',
-        images: [
-          'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&q=80&w=800'
-        ],
-        rentPricePerDay: 3,
-        securityDeposit: 15,
-        availability: true,
-        condition: 'Good',
-        pickupLocation: 'Campus Sports Complex Entrance',
-        blockedDates: [],
-        createdAt: new Date('2025-02-22').toISOString(),
-        updatedAt: new Date('2025-02-22').toISOString()
+// ----------------------------------------------------
+// Connection
+// ----------------------------------------------------
+// Prefer a single DATABASE_URL (e.g. postgres://user:pass@localhost:5432/resource_sharing_db),
+// or fall back to individual PG* env vars.
+export const pool = new Pool(
+  process.env.DATABASE_URL
+    ? { connectionString: process.env.DATABASE_URL }
+    : {
+        host: process.env.PGHOST || 'localhost',
+        port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
+        user: process.env.PGUSER || 'postgres',
+        password: process.env.PGPASSWORD || '',
+        database: process.env.PGDATABASE || 'resource_sharing_db'
       }
-    ];
+);
 
-    // Seed Bookings
-    this.bookings = [
-      {
-        _id: 'bkg_001',
-        itemId: 'itm_001',
-        itemTitle: 'Texas Instruments TI-84 Plus CE Graphing Calculator',
-        itemImage: 'https://images.unsplash.com/photo-1587145820266-a5951ee6f620?auto=format&fit=crop&q=80&w=800',
-        itemCategory: 'Calculators',
-        rentPricePerDay: 5,
-        securityDeposit: 30,
-        borrowerId: student2._id,
-        borrowerName: student2.name,
-        borrowerEmail: student2.email,
-        ownerId: student1._id,
-        ownerName: student1.name,
-        ownerEmail: student1.email,
-        startDate: '2025-03-01',
-        endDate: '2025-03-05',
-        totalDays: 4,
-        totalCost: 20,
-        status: 'Accepted',
-        createdAt: new Date('2025-02-25').toISOString(),
-        updatedAt: new Date('2025-02-25').toISOString()
-      },
-      {
-        _id: 'bkg_002',
-        itemId: 'itm_003',
-        itemTitle: 'Introduction to Algorithms (CLRS 4th Edition - Hardcover)',
-        itemImage: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=800',
-        itemCategory: 'Books',
-        rentPricePerDay: 3,
-        securityDeposit: 25,
-        borrowerId: student3._id,
-        borrowerName: student3.name,
-        borrowerEmail: student3.email,
-        ownerId: student1._id,
-        ownerName: student1.name,
-        ownerEmail: student1.email,
-        startDate: '2025-02-15',
-        endDate: '2025-02-20',
-        totalDays: 5,
-        totalCost: 15,
-        status: 'Completed',
-        createdAt: new Date('2025-02-14').toISOString(),
-        updatedAt: new Date('2025-02-21').toISOString()
-      }
-    ];
+pool.on('error', (err) => {
+  console.error('Unexpected Postgres pool error:', err.message);
+});
 
-    // Seed Messages for chat
-    this.messages = [
-      {
-        _id: 'msg_001',
-        bookingId: 'bkg_001',
-        senderId: student2._id,
-        senderName: student2.name,
-        receiverId: student1._id,
-        receiverName: student1.name,
-        content: 'Hi Alex! I submitted a booking request for the TI-84 CE calculator for my Linear Algebra midterm.',
-        timestamp: new Date('2025-02-25T10:30:00Z').toISOString(),
-        isRead: true
-      },
-      {
-        _id: 'msg_002',
-        bookingId: 'bkg_001',
-        senderId: student1._id,
-        senderName: student1.name,
-        receiverId: student2._id,
-        receiverName: student2.name,
-        content: 'Hey Priya! Absolutely, I accepted your request. We can meet in CS Lab 3 around 2 PM tomorrow.',
-        timestamp: new Date('2025-02-25T11:15:00Z').toISOString(),
-        isRead: true
-      }
-    ];
+// ----------------------------------------------------
+// Row mapping helpers
+// ----------------------------------------------------
+// The app is written Mongo-style (every record has `_id`), but Postgres
+// columns are snake_case with a plain `id` primary key. These helpers convert
+// row shape at the boundary so the rest of the app doesn't need to change.
 
-    // Seed Complaints
-    this.complaints = [
-      {
-        _id: 'cmp_001',
-        reporterId: student2._id,
-        reporterName: student2.name,
-        reportedUserId: student4._id,
-        reportedUserName: student4.name,
-        bookingId: 'bkg_old_999',
-        itemTitle: 'Defective GPU Docking Case',
-        type: 'Damaged Item',
-        description: 'Item was delivered with burnt power connectors and failed immediately during testing. Owner refused to refund security deposit.',
-        proofUrl: 'https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&q=80&w=800',
-        status: 'Pending',
-        createdAt: new Date('2025-02-26').toISOString()
-      }
-    ];
-
-    // Seed Ratings
-    this.ratings = [
-      {
-        _id: 'rtg_001',
-        bookingId: 'bkg_002',
-        itemId: 'itm_003',
-        reviewerId: student3._id,
-        reviewerName: student3.name,
-        revieweeId: student1._id,
-        stars: 5,
-        comment: 'Book was in perfect condition! Alex is very polite and punctual for pickup.',
-        createdAt: new Date('2025-02-21').toISOString()
-      }
-    ];
-
-    // Seed Notifications
-    this.notifications = [
-      {
-        _id: 'ntf_001',
-        userId: student2._id,
-        title: 'Booking Accepted',
-        message: 'Alex Chen accepted your rental request for TI-84 Plus CE Calculator.',
-        type: 'booking',
-        read: false,
-        createdAt: new Date('2025-02-25T11:15:00Z').toISOString(),
-        link: '/bookings'
-      }
-    ];
-
-    this.initialized = true;
-  }
-
-  // Utility method to trigger auto-block check
-  checkAndApplyAutoBlock(userId) {
-    const user = this.users.find(u => u._id === userId);
-    if (!user) return false;
-
-    // Count resolved/verified complaints against user
-    const userComplaints = this.complaints.filter(c => c.reportedUserId === userId);
-    const verifiedCount = userComplaints.length;
-    user.complaintCount = verifiedCount;
-
-    if (user.complaintCount >= 5 && !user.isBlocked) {
-      user.isBlocked = true;
-      user.updatedAt = new Date().toISOString();
-
-      // Create notification for user
-      this.notifications.push({
-        _id: `ntf_${Date.now()}_block`,
-        userId: user._id,
-        title: 'Account Blocked',
-        message: 'Your account has been automatically blocked due to receiving 5 verified complaints. Please contact CS Department Admin.',
-        type: 'system',
-        read: false,
-        createdAt: new Date().toISOString()
-      });
-      return true; // Newly blocked
-    }
-    return user.isBlocked;
-  }
+function toCamelKey(key) {
+  return key.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
 }
 
-export const db = new DatabaseStore();
-db.init();
+function rowToCamel(row) {
+  const out = {};
+  for (const [key, value] of Object.entries(row)) {
+    const camelKey = key === 'id' ? '_id' : toCamelKey(key);
+    out[camelKey] = value;
+  }
+  return out;
+}
+
+export async function queryRows(text, params = []) {
+  const result = await pool.query(text, params);
+  return result.rows.map(rowToCamel);
+}
+
+export async function queryOne(text, params = []) {
+  const rows = await queryRows(text, params);
+  return rows[0] || null;
+}
+
+export function genId(prefix) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ----------------------------------------------------
+// USERS
+// ----------------------------------------------------
+export const users = {
+  findById: (id) => queryOne('SELECT * FROM users WHERE id = $1', [id]),
+
+  findByEmail: (email) => queryOne('SELECT * FROM users WHERE lower(email) = lower($1)', [email]),
+
+  findByEnrollment: (enrollmentNumber) =>
+    queryOne('SELECT * FROM users WHERE lower(enrollment_number) = lower($1)', [enrollmentNumber]),
+
+  create: ({ name, email, passwordHash, enrollmentNumber, mobileNumber, department, semester, avatar }) => {
+    const id = genId('usr_std');
+    return queryOne(
+      `INSERT INTO users
+         (id, name, email, password_hash, enrollment_number, mobile_number, department, semester, role, avatar)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'student',$9)
+       RETURNING *`,
+      [id, name, email, passwordHash, enrollmentNumber, mobileNumber, department, semester, avatar]
+    );
+  },
+
+  verifyPassword: (plainPassword, passwordHash) => bcrypt.compare(plainPassword, passwordHash),
+
+  updateProfile: (id, { name, mobileNumber, semester, avatar }) =>
+    queryOne(
+      `UPDATE users SET
+         name = COALESCE($2, name),
+         mobile_number = COALESCE($3, mobile_number),
+         semester = COALESCE($4, semester),
+         avatar = COALESCE($5, avatar),
+         updated_at = now()
+       WHERE id = $1
+       RETURNING *`,
+      [id, name || null, mobileNumber || null, semester || null, avatar || null]
+    ),
+
+  setBlocked: (id, isBlocked) =>
+    queryOne('UPDATE users SET is_blocked = $2, updated_at = now() WHERE id = $1 RETURNING *', [id, isBlocked]),
+
+  setComplaintCount: (id, count) =>
+    queryOne('UPDATE users SET complaint_count = $2, updated_at = now() WHERE id = $1 RETURNING *', [id, count]),
+
+  setRatingStats: (id, averageRating, totalRatings) =>
+    queryOne(
+      'UPDATE users SET average_rating = $2, total_ratings = $3, updated_at = now() WHERE id = $1 RETURNING *',
+      [id, averageRating, totalRatings]
+    ),
+
+  findAllForAdmin: () => queryRows('SELECT * FROM users ORDER BY created_at DESC'),
+
+  countStudents: async () => (await queryOne(`SELECT COUNT(*)::int AS count FROM users WHERE role = 'student'`)).count,
+
+  countBlocked: async () => (await queryOne('SELECT COUNT(*)::int AS count FROM users WHERE is_blocked = true')).count
+};
+
+// ----------------------------------------------------
+// ITEMS  (owner_name/email/phone/avatar/semester are joined live from users,
+// not stored — the old in-memory copies could go stale on profile edits)
+// ----------------------------------------------------
+const ITEM_SELECT = `
+  SELECT it.*,
+         u.name AS owner_name, u.email AS owner_email, u.mobile_number AS owner_phone,
+         u.avatar AS owner_avatar, u.semester AS owner_semester
+  FROM items it
+  JOIN users u ON u.id = it.owner_id
+`;
+
+export const items = {
+  findAll: ({ search, category, minPrice, maxPrice, availableOnly, condition } = {}) => {
+    const clauses = [];
+    const params = [];
+    let i = 1;
+
+    if (search) {
+      clauses.push(`(it.title ILIKE $${i} OR it.description ILIKE $${i} OR it.pickup_location ILIKE $${i})`);
+      params.push(`%${search}%`);
+      i++;
+    }
+    if (category && category !== 'All') {
+      clauses.push(`it.category = $${i}`);
+      params.push(category);
+      i++;
+    }
+    if (condition) {
+      clauses.push(`it.condition = $${i}`);
+      params.push(condition);
+      i++;
+    }
+    if (availableOnly === 'true') {
+      clauses.push('it.availability = true');
+    }
+    if (minPrice) {
+      clauses.push(`it.rent_price_per_day >= $${i}`);
+      params.push(Number(minPrice));
+      i++;
+    }
+    if (maxPrice) {
+      clauses.push(`it.rent_price_per_day <= $${i}`);
+      params.push(Number(maxPrice));
+      i++;
+    }
+
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+    return queryRows(`${ITEM_SELECT} ${where} ORDER BY it.created_at DESC`, params);
+  },
+
+  findByOwnerId: (ownerId) =>
+    queryRows(`${ITEM_SELECT} WHERE it.owner_id = $1 ORDER BY it.created_at DESC`, [ownerId]),
+
+  findById: (id) => queryOne(`${ITEM_SELECT} WHERE it.id = $1`, [id]),
+
+  create: async ({ ownerId, title, category, description, images, rentPricePerDay, securityDeposit, condition, pickupLocation }) => {
+    const id = genId('itm');
+    await pool.query(
+      `INSERT INTO items
+         (id, owner_id, title, category, description, images, rent_price_per_day, security_deposit, availability, condition, pickup_location)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,$9,$10)`,
+      [id, ownerId, title, category, description, images, rentPricePerDay, securityDeposit, condition, pickupLocation]
+    );
+    return items.findById(id);
+  },
+
+  update: async (id, changes) => {
+    const fieldMap = {
+      title: 'title',
+      category: 'category',
+      description: 'description',
+      images: 'images',
+      rentPricePerDay: 'rent_price_per_day',
+      securityDeposit: 'security_deposit',
+      availability: 'availability',
+      condition: 'condition',
+      pickupLocation: 'pickup_location'
+    };
+    const sets = [];
+    const params = [id];
+    let i = 2;
+    for (const [key, col] of Object.entries(fieldMap)) {
+      if (changes[key] !== undefined) {
+        sets.push(`${col} = $${i}`);
+        params.push(changes[key]);
+        i++;
+      }
+    }
+    if (!sets.length) return items.findById(id);
+    sets.push('updated_at = now()');
+    await pool.query(`UPDATE items SET ${sets.join(', ')} WHERE id = $1`, params);
+    return items.findById(id);
+  },
+
+  delete: async (id) => {
+    const result = await pool.query('DELETE FROM items WHERE id = $1', [id]);
+    return result.rowCount > 0;
+  },
+
+  countAll: async () => (await queryOne('SELECT COUNT(*)::int AS count FROM items')).count
+};
+
+// ----------------------------------------------------
+// BLOCKED DATES (owner-managed unavailability ranges, separate from bookings)
+// ----------------------------------------------------
+export const blockedDates = {
+  findByItemId: (itemId) =>
+    queryRows('SELECT * FROM blocked_dates WHERE item_id = $1 ORDER BY start_date', [itemId]),
+
+  create: ({ itemId, startDate, endDate, reason }) => {
+    const id = genId('blk');
+    return queryOne(
+      `INSERT INTO blocked_dates (id, item_id, start_date, end_date, reason)
+       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [id, itemId, startDate, endDate, reason || 'Owner unavailable']
+    );
+  },
+
+  delete: async (id, itemId) => {
+    const result = await pool.query('DELETE FROM blocked_dates WHERE id = $1 AND item_id = $2', [id, itemId]);
+    return result.rowCount > 0;
+  }
+};
+
+// ----------------------------------------------------
+// FAVORITES (join table, not an array on the user)
+// ----------------------------------------------------
+export const favorites = {
+  itemsForUser: (userId) =>
+    queryRows(
+      `${ITEM_SELECT} JOIN favorites f ON f.item_id = it.id WHERE f.user_id = $1 ORDER BY f.created_at DESC`,
+      [userId]
+    ),
+
+  isFavorite: async (userId, itemId) =>
+    !!(await queryOne('SELECT 1 AS x FROM favorites WHERE user_id = $1 AND item_id = $2', [userId, itemId])),
+
+  add: (userId, itemId) =>
+    pool.query('INSERT INTO favorites (user_id, item_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [userId, itemId]),
+
+  remove: (userId, itemId) =>
+    pool.query('DELETE FROM favorites WHERE user_id = $1 AND item_id = $2', [userId, itemId])
+};
+
+// ----------------------------------------------------
+// BOOKINGS  (item/owner/borrower details are joined live, not snapshotted)
+// ----------------------------------------------------
+const BOOKING_SELECT = `
+  SELECT b.*,
+         it.title AS item_title, it.images[1] AS item_image, it.category AS item_category,
+         it.rent_price_per_day AS rent_price_per_day, it.security_deposit AS security_deposit,
+         br.name AS borrower_name, br.email AS borrower_email,
+         ow.name AS owner_name, ow.email AS owner_email
+  FROM bookings b
+  JOIN items it ON it.id = b.item_id
+  JOIN users br ON br.id = b.borrower_id
+  JOIN users ow ON ow.id = b.owner_id
+`;
+
+export const bookings = {
+  findById: (id) => queryOne(`${BOOKING_SELECT} WHERE b.id = $1`, [id]),
+
+  findActiveForItem: (itemId) =>
+    queryRows(`SELECT * FROM bookings WHERE item_id = $1 AND status IN ('Pending','Accepted')`, [itemId]),
+
+  findByBorrower: (userId) =>
+    queryRows(`${BOOKING_SELECT} WHERE b.borrower_id = $1 ORDER BY b.created_at DESC`, [userId]),
+
+  findByOwner: (userId) =>
+    queryRows(`${BOOKING_SELECT} WHERE b.owner_id = $1 ORDER BY b.created_at DESC`, [userId]),
+
+  create: async ({ itemId, borrowerId, ownerId, startDate, endDate, totalDays, totalCost }) => {
+    const id = genId('bkg');
+    await pool.query(
+      `INSERT INTO bookings (id, item_id, borrower_id, owner_id, start_date, end_date, total_days, total_cost, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pending')`,
+      [id, itemId, borrowerId, ownerId, startDate, endDate, totalDays, totalCost]
+    );
+    return bookings.findById(id);
+  },
+
+  updateStatus: async (id, status) => {
+    await pool.query('UPDATE bookings SET status = $2, updated_at = now() WHERE id = $1', [id, status]);
+    return bookings.findById(id);
+  },
+
+  countAll: async () => (await queryOne('SELECT COUNT(*)::int AS count FROM bookings')).count,
+
+  totalRentalVolume: async () =>
+    (
+      await queryOne(
+        `SELECT COALESCE(SUM(total_cost), 0)::float AS total FROM bookings WHERE status IN ('Completed','Accepted')`
+      )
+    ).total
+};
+
+// ----------------------------------------------------
+// MESSAGES (sender/receiver names joined live)
+// ----------------------------------------------------
+const MESSAGE_SELECT = `
+  SELECT m.*, s.name AS sender_name, r.name AS receiver_name
+  FROM messages m
+  JOIN users s ON s.id = m.sender_id
+  JOIN users r ON r.id = m.receiver_id
+`;
+
+export const messages = {
+  findByBooking: (bookingId) => queryRows(`${MESSAGE_SELECT} WHERE m.booking_id = $1 ORDER BY m.timestamp`, [bookingId]),
+
+  lastForBooking: async (bookingId) => {
+    const rows = await queryRows(`${MESSAGE_SELECT} WHERE m.booking_id = $1 ORDER BY m.timestamp DESC LIMIT 1`, [bookingId]);
+    return rows[0] || null;
+  },
+
+  unreadCountForUser: async (bookingId, userId) =>
+    (
+      await queryOne(
+        'SELECT COUNT(*)::int AS count FROM messages WHERE booking_id = $1 AND receiver_id = $2 AND is_read = false',
+        [bookingId, userId]
+      )
+    ).count,
+
+  create: async ({ bookingId, senderId, receiverId, content }) => {
+    const id = genId('msg');
+    await pool.query(
+      `INSERT INTO messages (id, booking_id, sender_id, receiver_id, content, is_read)
+       VALUES ($1,$2,$3,$4,$5,false)`,
+      [id, bookingId, senderId, receiverId, content]
+    );
+    const rows = await queryRows(`${MESSAGE_SELECT} WHERE m.id = $1`, [id]);
+    return rows[0];
+  },
+
+  markReadForReceiver: (bookingId, userId) =>
+    pool.query('UPDATE messages SET is_read = true WHERE booking_id = $1 AND receiver_id = $2 AND is_read = false', [
+      bookingId,
+      userId
+    ])
+};
+
+// ----------------------------------------------------
+// COMPLAINTS (reporter/reported names joined live)
+// ----------------------------------------------------
+const COMPLAINT_SELECT = `
+  SELECT c.*, rp.name AS reporter_name, rd.name AS reported_user_name
+  FROM complaints c
+  JOIN users rp ON rp.id = c.reporter_id
+  JOIN users rd ON rd.id = c.reported_user_id
+`;
+
+export const complaints = {
+  findByReporter: (userId) => queryRows(`${COMPLAINT_SELECT} WHERE c.reporter_id = $1 ORDER BY c.created_at DESC`, [userId]),
+
+  findAgainst: (userId) => queryRows(`${COMPLAINT_SELECT} WHERE c.reported_user_id = $1 ORDER BY c.created_at DESC`, [userId]),
+
+  findAll: () => queryRows(`${COMPLAINT_SELECT} ORDER BY c.created_at DESC`),
+
+  findById: (id) => queryOne(`${COMPLAINT_SELECT} WHERE c.id = $1`, [id]),
+
+  countByReportedUser: async (userId) =>
+    (await queryOne('SELECT COUNT(*)::int AS count FROM complaints WHERE reported_user_id = $1', [userId])).count,
+
+  countPending: async () =>
+    (await queryOne(`SELECT COUNT(*)::int AS count FROM complaints WHERE status IN ('Pending','Under Review')`)).count,
+
+  create: async ({ reporterId, reportedUserId, bookingId, itemTitle, type, description, proofUrl }) => {
+    const id = genId('cmp');
+    await pool.query(
+      `INSERT INTO complaints (id, reporter_id, reported_user_id, booking_id, item_title, type, description, proof_url, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pending')`,
+      [id, reporterId, reportedUserId, bookingId || null, itemTitle || null, type, description, proofUrl]
+    );
+    return complaints.findById(id);
+  },
+
+  update: async (id, { status, adminNote }) => {
+    const sets = [];
+    const params = [id];
+    let i = 2;
+    if (status !== undefined) {
+      sets.push(`status = $${i}`);
+      params.push(status);
+      i++;
+    }
+    if (adminNote !== undefined) {
+      sets.push(`admin_note = $${i}`);
+      params.push(adminNote);
+      i++;
+    }
+    if (!sets.length) return complaints.findById(id);
+    await pool.query(`UPDATE complaints SET ${sets.join(', ')} WHERE id = $1`, params);
+    return complaints.findById(id);
+  }
+};
+
+// ----------------------------------------------------
+// RATINGS
+// ----------------------------------------------------
+export const ratings = {
+  findForUser: (userId) => queryRows('SELECT * FROM ratings WHERE reviewee_id = $1 ORDER BY created_at DESC', [userId]),
+
+  create: async ({ bookingId, revieweeId, reviewerId, stars, comment }) => {
+    const id = genId('rtg');
+    // item_id isn't sent by the client — derive it from the booking.
+    const booking = await queryOne('SELECT item_id FROM bookings WHERE id = $1', [bookingId]);
+    await pool.query(
+      `INSERT INTO ratings (id, booking_id, item_id, reviewer_id, reviewee_id, stars, comment)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [id, bookingId, booking ? booking.itemId : null, reviewerId, revieweeId, stars, comment]
+    );
+    return queryOne('SELECT * FROM ratings WHERE id = $1', [id]);
+  },
+
+  averageForUser: async (userId) => {
+    const row = await queryOne(
+      'SELECT COALESCE(AVG(stars), 5.0)::numeric(3,2) AS avg, COUNT(*)::int AS total FROM ratings WHERE reviewee_id = $1',
+      [userId]
+    );
+    return { averageRating: Number(row.avg), totalRatings: row.total };
+  }
+};
+
+// ----------------------------------------------------
+// NOTIFICATIONS
+// ----------------------------------------------------
+export const notifications = {
+  findForUser: (userId) => queryRows('SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC', [userId]),
+
+  create: ({ userId, title, message, type, link }) => {
+    const id = genId('ntf');
+    return queryOne(
+      `INSERT INTO notifications (id, user_id, title, message, type, link, read)
+       VALUES ($1,$2,$3,$4,$5,$6,false) RETURNING *`,
+      [id, userId, title, message, type, link || null]
+    );
+  },
+
+  markRead: (id, userId) =>
+    pool.query('UPDATE notifications SET read = true WHERE id = $1 AND user_id = $2', [id, userId])
+};
+
+// ----------------------------------------------------
+// AUTO-BLOCK
+// ----------------------------------------------------
+// Recomputes a user's complaint_count from the complaints table and blocks
+// them once it reaches 5, same threshold as the original in-memory logic.
+export async function checkAndApplyAutoBlock(userId) {
+  const user = await users.findById(userId);
+  if (!user) return false;
+
+  const count = await complaints.countByReportedUser(userId);
+  await users.setComplaintCount(userId, count);
+
+  if (count >= 5 && !user.isBlocked) {
+    await users.setBlocked(userId, true);
+    await notifications.create({
+      userId,
+      title: 'Account Blocked',
+      message:
+        'Your account has been automatically blocked due to receiving 5 verified complaints. Please contact CS Department Admin.',
+      type: 'system'
+    });
+    return true;
+  }
+  return user.isBlocked;
+}

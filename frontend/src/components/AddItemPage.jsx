@@ -22,16 +22,16 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
     editingItem?.description || "",
   );
   const [rentPricePerDay, setRentPricePerDay] = useState(
-    editingItem?.rentPricePerDay ? String(editingItem.rentPricePerDay) : "5",
+    editingItem?.rentPricePerDay ? String(editingItem.rentPricePerDay) : "60",
   );
   const [securityDeposit, setSecurityDeposit] = useState(
-    editingItem?.securityDeposit ? String(editingItem.securityDeposit) : "20",
+    editingItem?.securityDeposit ? String(editingItem.securityDeposit) : "40",
   );
   const [condition, setCondition] = useState(
     editingItem?.condition || "Good",
   );
   const [pickupLocation, setPickupLocation] = useState(
-    editingItem?.pickupLocation || "CS Lab 3, 2nd Floor Engineering Building",
+    editingItem?.pickupLocation || "2nd Floor CS Department ",
   );
   const [bill, setBill] = useState(editingItem?.bill || "");
   const [billUrl, setBillUrl] = useState("");
@@ -208,7 +208,7 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Texas Instruments TI-84 Plus CE Graphing Calculator"
+              placeholder="Enter Full Name OF Resource / Item"
               className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
           </div>
@@ -253,23 +253,23 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Rental Price Per Day ($) *
+                Rental Price Per Day (₹) *
               </label>
               <input
                 type="number"
                 min="0"
-                step="0.5"
+                step="1"
                 required
                 value={rentPricePerDay}
                 onChange={(e) => setRentPricePerDay(e.target.value)}
-                placeholder="5"
+                placeholder="60"
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Refundable Security Deposit ($)
+                Refundable Security Deposit (₹)
               </label>
               <input
                 type="number"
@@ -277,7 +277,7 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
                 step="1"
                 value={securityDeposit}
                 onChange={(e) => setSecurityDeposit(e.target.value)}
-                placeholder="20"
+                placeholder="40"
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
@@ -342,7 +342,7 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
             </div>
 
             {/* Bill Upload / URL */}
-            <div className="space-y-3">
+            {/*<div className="space-y-3">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                 Original Bill / Purchase Receipt
               </label>
@@ -411,7 +411,7 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
                 Upload the original purchase bill/receipt to help verify the
                 listing.
               </p>
-            </div>
+            </div>*/}
 
             {/* Quick Presets or File Upload */}
             <div className="flex flex-col sm:flex-row gap-2">
@@ -422,13 +422,13 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
                 placeholder="Paste Image URL or select preset below..."
                 className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs"
               />
-              <button
+              {/* <button
                 type="button"
                 onClick={handleAddImage}
                 className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-xs hover:bg-slate-200"
               >
                 Add URL
-              </button>
+              </button> */}
               <label className="px-4 py-2 bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300 rounded-xl font-bold text-xs cursor-pointer hover:bg-blue-100 flex items-center justify-center space-x-1">
                 <Upload className="w-3.5 h-3.5" />
                 <span>Upload File</span>

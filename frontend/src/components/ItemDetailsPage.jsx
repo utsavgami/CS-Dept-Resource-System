@@ -109,9 +109,21 @@ export const ItemDetailsPage = ({
   const loadOwnerDetails = async () => {
     try {
       const res = await api.getItemById(item._id);
+      const ownerId = res.owner?._id;
 
-      setOwnerData(res.owner);
       setOwnerRatings(res.ownerRatings || []);
+
+      // Fetch the profile for the owner of this resource, never the viewer.
+      if (ownerId) {
+        try {
+          const profile = await api.getUserProfile(ownerId);
+          setOwnerData(profile.user || res.owner);
+        } catch {
+          setOwnerData(res.owner);
+        }
+      } else {
+        setOwnerData(res.owner || null);
+      }
 
       // Backend se availability-after date aaye to use karo
       if (res.availabilityAfter) {
@@ -307,13 +319,13 @@ export const ItemDetailsPage = ({
           </div>
 
           {/* Owner Profile & Reviews */}
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="profile-panel bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center space-x-2">
               <UserIcon className="w-4 h-4 text-blue-600" />
               <span>Owner Student Profile</span>
             </h3>
 
-            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800">
+            <div className="profile-identity flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800">
               <div className="flex items-center space-x-3">
                 <img
                   src={
@@ -321,12 +333,22 @@ export const ItemDetailsPage = ({
                     `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.ownerName}`
                   }
                   alt={item.ownerName}
-                  className="w-12 h-12 rounded-full object-cover border border-slate-200 dark:border-slate-700"
+                  className="w-12 h-12 rounded-full object-cover border border-slate-200 dark:border-slate-700 transition-transform duration-200 hover:scale-105"
                 />
                 <div>
                   <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-                    {item.ownerName}
+                    {ownerData?.name || item.ownerName}
                   </h4>
+                  {ownerData?.enrollmentNumber && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Enrollment Number: {ownerData.enrollmentNumber}
+                    </p>
+                  )}
+                  {ownerData?._id && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      User ID: {ownerData._id}
+                    </p>
+                  )}
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {item.ownerSemester || "CS Student"} • Computer Science Dept
                   </p>

@@ -61,7 +61,7 @@ export const LoginPage = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              College Email (@cs.edu)
+              College Email (@sgsits.ac.in)
             </label>
             <div className="relative">
               <Mail className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
@@ -70,7 +70,7 @@ export const LoginPage = ({
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="alex.chen@cs.edu or admin@cs.edu"
+                placeholder="enrollement@sgsits.ac.in"
                 className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
@@ -118,7 +118,7 @@ export const LoginPage = ({
             </button>
           </p>
 
-          <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 space-y-2">
+          {/* <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 space-y-2">
             <div className="flex items-center space-x-1.5 text-amber-800 dark:text-amber-300 font-bold text-xs">
               <Sparkles className="w-4 h-4" />
               <span>Instant Test Demo Access</span>
@@ -132,7 +132,7 @@ export const LoginPage = ({
             >
               Open Instant Account Switcher
             </button>
-          </div>
+          </div> */}
         </div>
 
       </div>

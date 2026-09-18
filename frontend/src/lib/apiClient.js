@@ -84,7 +84,9 @@ export const api = {
     fetchWithAuth(`/bookings/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
 
   // Chat
+  getConversations: () => fetchWithAuth('/chat/conversations'),
   getMessages: (bookingId) => fetchWithAuth(`/chat/messages/${bookingId}`),
+  markConversationRead: (bookingId) => fetchWithAuth(`/chat/messages/${bookingId}/read`, { method: 'PUT' }),
   sendMessage: (data) =>
     fetchWithAuth('/chat/messages', { method: 'POST', body: JSON.stringify(data) }),
 

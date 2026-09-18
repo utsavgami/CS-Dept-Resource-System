@@ -3,7 +3,7 @@ import { Laptop, Shield, FileText, Heart, CheckCircle2 } from 'lucide-react';
 
 export const Footer = ({ setActiveTab }) => {
   return (
-    <footer className="bg-indigo-950 text-slate-400 border-t border-indigo-900/60 mt-20 font-sans">
+    <footer className="app-footer bg-indigo-950 text-slate-400 border-t border-indigo-900/60 mt-20 font-sans">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
 
@@ -69,21 +69,29 @@ export const Footer = ({ setActiveTab }) => {
             </ul>
           </div>
 
-          {/* MERN Stack Spec */}
-          {/* <div>
-            <h4 className="font-display font-bold text-white text-sm mb-4">MERN Stack Tech</h4>
-            <div className="flex flex-wrap gap-1.5 text-[11px]">
-              <span className="bg-indigo-900/60 border border-indigo-800/60 text-slate-300 px-2 py-1 rounded-md font-mono">React.js 19</span>
-              <span className="bg-indigo-900/60 border border-indigo-800/60 text-slate-300 px-2 py-1 rounded-md font-mono">Node.js + Express</span>
-              <span className="bg-indigo-900/60 border border-indigo-800/60 text-slate-300 px-2 py-1 rounded-md font-mono">MongoDB Mongoose</span>
-              <span className="bg-indigo-900/60 border border-indigo-800/60 text-slate-300 px-2 py-1 rounded-md font-mono">Socket.io Chat</span>
-              <span className="bg-indigo-900/60 border border-indigo-800/60 text-slate-300 px-2 py-1 rounded-md font-mono">JWT Auth</span>
-              <span className="bg-indigo-900/60 border border-indigo-800/60 text-slate-300 px-2 py-1 rounded-md font-mono">Tailwind CSS v4</span>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-3">
-              Full production-ready modular REST API server running on port 3000.
+          {/* Why This Platform / How It Works */}
+          <div>
+            <h4 className="font-display font-bold text-white text-sm mb-4">Why This Platform Exists</h4>
+            <p className="text-xs text-slate-400 leading-relaxed mb-4">
+              Calculators, lab kits, and textbooks often sit unused after a semester ends. This platform lets CS students lend and borrow directly from each other — saving money and cutting down on waste, all within a trusted, verified department network.
             </p>
-          </div> */}
+
+            <h5 className="font-display font-bold text-white text-xs mb-2 uppercase tracking-wide">How It Works</h5>
+            <ol className="space-y-2 text-xs">
+              <li className="flex items-start space-x-1.5">
+                <span className="shrink-0 w-4 h-4 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">1</span>
+                <span>Browse resources and send a booking request with your dates</span>
+              </li>
+              <li className="flex items-start space-x-1.5">
+                <span className="shrink-0 w-4 h-4 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">2</span>
+                <span>Owner reviews and accepts your request</span>
+              </li>
+              <li className="flex items-start space-x-1.5">
+                <span className="shrink-0 w-4 h-4 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">3</span>
+                <span>Chat to arrange pickup, then return it on time</span>
+              </li>
+            </ol>
+          </div>
 
         </div>
 

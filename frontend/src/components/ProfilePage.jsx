@@ -28,7 +28,7 @@ export const ProfilePage = ({
     <div className="max-w-4xl mx-auto py-8 space-y-8 animate-in fade-in">
 
       {/* Profile Card */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xl space-y-6">
+      <div className="profile-panel bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xl space-y-6">
 
         <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-6">
 
@@ -36,7 +36,7 @@ export const ProfilePage = ({
             <img
               src={currentUser.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.name}`}
               alt={currentUser.name}
-              className="w-24 h-24 rounded-full object-cover border-4 border-blue-500/20 shadow-md"
+              className="w-24 h-24 rounded-full object-cover border-4 border-blue-500/20 shadow-md transition-transform duration-200 hover:scale-105"
             />
 
             <div className="space-y-1">
@@ -57,12 +57,17 @@ export const ProfilePage = ({
               <p className="text-xs text-slate-400 flex items-center justify-center sm:justify-start space-x-2 pt-1">
                 <span>Enrollment: <strong className="text-slate-700 dark:text-slate-300">{currentUser.enrollmentNumber}</strong></span>
               </p>
+              {currentUser?._id && (
+                <p className="text-xs text-slate-400 flex items-center justify-center sm:justify-start space-x-2">
+                  <span>User ID: <strong className="text-slate-700 dark:text-slate-300">{currentUser._id}</strong></span>
+                </p>
+              )}
             </div>
           </div>
 
           <button
             onClick={() => setEditing(!editing)}
-            className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition flex items-center space-x-1.5 shrink-0"
+            className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition flex items-center space-x-1.5 shrink-0"
           >
             <Edit3 className="w-4 h-4" />
             <span>Edit Profile</span>
@@ -210,7 +215,7 @@ export const ProfilePage = ({
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Avatar Image URL</label>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Profile Image</label>
                 <input
                   type="text"
                   value={form.avatar}

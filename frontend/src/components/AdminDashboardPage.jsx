@@ -173,7 +173,7 @@ export const AdminDashboardPage = () => {
 
           <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
             <span className="text-[11px] font-bold text-slate-400 uppercase">Rental Volume</span>
-            <p className="text-2xl font-black text-purple-600">${stats.totalRentalVolume}</p>
+            <p className="text-2xl font-black text-purple-600">₹{stats.totalRentalVolume}</p>
           </div>
         </div>
       )}

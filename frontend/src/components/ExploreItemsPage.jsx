@@ -78,7 +78,7 @@ export const ExploreItemsPage = ({
       </div>
 
       {/* Filter Controls Bar */}
-      <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+      <div className="filter-panel bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
 
         {/* Search Input */}
         <div className="relative">
@@ -133,7 +133,7 @@ export const ExploreItemsPage = ({
           </div>
 
           {/* Max Price Slider */}
-          <div className="flex items-center space-x-3">
+          {/* <div className="flex items-center space-x-3">
             <span className="font-semibold text-slate-600 dark:text-slate-400">
               Max Rent / Day: <strong className="text-blue-600 dark:text-blue-400">₹{maxPrice}</strong>
             </span>
@@ -145,7 +145,7 @@ export const ExploreItemsPage = ({
               onChange={(e) => setMaxPrice(Number(e.target.value))}
               className="w-28 accent-blue-600 cursor-pointer"
             />
-          </div>
+          </div> */}
 
           {/* Availability Toggle */}
           <label className="flex items-center space-x-2 cursor-pointer font-semibold text-slate-700 dark:text-slate-300">
@@ -186,7 +186,7 @@ export const ExploreItemsPage = ({
           ))}
         </div>
       ) : items.length === 0 ? (
-        <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 space-y-3">
+        <div className="state-card text-center py-16 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 space-y-3">
           <p className="text-base font-bold text-slate-700 dark:text-slate-200">
             No resources match your search criteria.
           </p>
@@ -200,7 +200,7 @@ export const ExploreItemsPage = ({
             <div
               key={item._id}
               onClick={() => onSelectItem(item)}
-              className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-xl transition-all duration-200 cursor-pointer flex flex-col justify-between group"
+              className="resource-card bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden cursor-pointer flex flex-col justify-between group"
             >
               <div>
                 {/* Image Container */}

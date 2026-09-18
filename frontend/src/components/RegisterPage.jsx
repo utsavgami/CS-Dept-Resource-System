@@ -84,7 +84,7 @@ export const RegisterPage = ({
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Alex Chen"
+                placeholder="User Full Name"
                 className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
@@ -93,7 +93,7 @@ export const RegisterPage = ({
           {/* College Email */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              College Email (@cs.edu) *
+              College Email (@sgsits.ac.in) *
             </label>
             <div className="relative">
               <Mail className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
@@ -102,7 +102,7 @@ export const RegisterPage = ({
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="alex.chen@cs.edu"
+                placeholder="enrollement@sgsits.ac.in"
                 className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
@@ -124,7 +124,7 @@ export const RegisterPage = ({
                   required
                   value={enrollmentNumber}
                   onChange={(e) => setEnrollmentNumber(e.target.value)}
-                  placeholder="CS2023001"
+                  placeholder="Full Enrollment Number"
                   className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
               </div>
@@ -141,7 +141,7 @@ export const RegisterPage = ({
                   required
                   value={mobileNumber}
                   onChange={(e) => setMobileNumber(e.target.value)}
-                  placeholder="+1-555-019-2831"
+                  placeholder="+91-9876543210"
                   className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
               </div>
@@ -213,13 +213,13 @@ export const RegisterPage = ({
             </button>
           </p>
 
-          <button
+          {/* <button
             onClick={onOpenDemoModal}
             className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition flex items-center justify-center space-x-1.5"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
             <span>Or Use Instant Demo Login Switcher</span>
-          </button>
+          </button> */}
         </div>
 
       </div>

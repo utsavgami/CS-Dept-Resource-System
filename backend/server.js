@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import http from 'http';
 import path from 'path';
@@ -5,11 +6,21 @@ import { Server as SocketIOServer } from 'socket.io';
 import { createServer as createViteServer } from 'vite';
 import cors from 'cors';
 import { apiRouter } from './server/api.js';
-import { db } from './server/db.js';
+import { bookings, messages, notifications, pool } from './server/db.js';
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // Quick startup check so the terminal shows whether Postgres actually connected.
+  try {
+    const result = await pool.query('SELECT NOW()');
+    console.log(`[Postgres] Connected successfully — server time: ${result.rows[0].now}`);
+  } catch (err) {
+    console.error('[Postgres] Connection FAILED:', err.message);
+    console.error('[Postgres] Check your .env values (PGHOST/PGUSER/PGPASSWORD/PGDATABASE) and that Postgres is running.');
+    process.exit(1);
+  }
 
   app.use(cors());
   app.use(express.json({ limit: '10mb' }));
@@ -32,44 +43,38 @@ async function startServer() {
       console.log(`[Socket.io] Client ${socket.id} joined room booking_${bookingId}`);
     });
 
-    socket.on('send_chat_message', (data) => {
-      // Only allow chat once the owner has accepted the booking (or later,
-      // once completed) — same rule enforced by the REST /chat/messages route.
-      const booking = db.bookings.find(b => b._id === data.bookingId);
-      if (!booking || (booking.status !== 'Accepted' && booking.status !== 'Completed')) {
-        return; // silently drop; the sender's REST call will already have
-                // been rejected with a proper error, this just guards the
-                // realtime path too.
+    socket.on('send_chat_message', async (data) => {
+      try {
+        // Only allow chat once the owner has accepted the booking (or later,
+        // once completed) — same rule enforced by the REST /chat/messages route.
+        const booking = await bookings.findById(data.bookingId);
+        if (!booking || (booking.status !== 'Accepted' && booking.status !== 'Completed')) {
+          return; // silently drop; the sender's REST call will already have
+                  // been rejected with a proper error, this just guards the
+                  // realtime path too.
+        }
+
+        const newMsg = await messages.create({
+          bookingId: data.bookingId,
+          senderId: data.senderId,
+          receiverId: data.receiverId,
+          content: data.content
+        });
+
+        // Broadcast to room
+        io.to(`booking_${data.bookingId}`).emit('receive_chat_message', newMsg);
+
+        // Create notification
+        await notifications.create({
+          userId: data.receiverId,
+          title: `Message from ${data.senderName}`,
+          message: data.content.substring(0, 60) + (data.content.length > 60 ? '...' : ''),
+          type: 'chat',
+          link: `/messages?booking=${data.bookingId}`
+        });
+      } catch (err) {
+        console.error('[Socket.io] send_chat_message error:', err);
       }
-
-      const newMsg = {
-        _id: `msg_${Date.now()}`,
-        bookingId: data.bookingId,
-        senderId: data.senderId,
-        senderName: data.senderName,
-        receiverId: data.receiverId,
-        receiverName: data.receiverName,
-        content: data.content,
-        timestamp: new Date().toISOString(),
-        isRead: false
-      };
-
-      db.messages.push(newMsg);
-
-      // Broadcast to room
-      io.to(`booking_${data.bookingId}`).emit('receive_chat_message', newMsg);
-
-      // Create notification
-      db.notifications.push({
-        _id: `ntf_${Date.now()}`,
-        userId: data.receiverId,
-        title: `Message from ${data.senderName}`,
-        message: data.content.substring(0, 60) + (data.content.length > 60 ? '...' : ''),
-        type: 'chat',
-        read: false,
-        link: `/messages?booking=${data.bookingId}`,
-        createdAt: new Date().toISOString()
-      });
     });
 
     socket.on('disconnect', () => {

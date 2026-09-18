@@ -1,7 +1,18 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { db } from './db.js';
+import {
+  users,
+  items,
+  blockedDates,
+  favorites,
+  bookings,
+  messages,
+  complaints,
+  ratings,
+  notifications,
+  checkAndApplyAutoBlock
+} from './db.js';
 import { createUserRouter } from './routes/userRoutes.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cs_department_jwt_secret_key_2026';
@@ -9,8 +20,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'cs_department_jwt_secret_key_2026'
 export const apiRouter = express.Router();
 apiRouter.use(express.json());
 
+function stripPassword(user) {
+  if (!user) return user;
+  const { passwordHash, ...rest } = user;
+  return rest;
+}
+
 // Authentication Middleware
-export function authenticateToken(req, res, next) {
+export async function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -20,7 +37,7 @@ export function authenticateToken(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = db.users.find(u => u._id === decoded.userId);
+    const user = await users.findById(decoded.userId);
 
     if (!user) {
       return res.status(401).json({ error: 'User account not found' });
@@ -50,153 +67,111 @@ export function requireAdmin(req, res, next) {
 
 // POST /api/auth/register
 apiRouter.post('/auth/register', async (req, res) => {
-  const {
-    name,
-    email,
-    enrollmentNumber,
-    mobileNumber,
-    password,
-    semester,
-    department
-  } = req.body;
+  try {
+    const {
+      name,
+      email,
+      enrollmentNumber,
+      mobileNumber,
+      password,
+      semester,
+      department
+    } = req.body;
 
-  if (!name || !email || !enrollmentNumber || !mobileNumber || !password) {
-    return res.status(400).json({
-      error: 'All fields are required'
-    });
-  }
-
-  // ONLY COLLEGE CS GMAIL ALLOWED
-  // Format: 0801CSYYRRRR@gmail.com
-  // Example: 0801CS231160@gmail.com
-
-  const emailValue = String(email).trim().toLowerCase();
-
-  const collegeEmailRegex = /^0801cs\d{2}\d{4}@gmail\.com$/i;
-
-  if (!collegeEmailRegex.test(emailValue)) {
-    return res.status(400).json({
-      error: 'Please use your college CS email. Format: 0801CSYYRRRR@gmail.com'
-    });
-  }
-
-  // Check duplicate email
-  const existingEmail = db.users.find(
-    u => u.email.toLowerCase() === emailValue
-  );
-
-  if (existingEmail) {
-    return res.status(400).json({
-      error: 'An account with this email already exists'
-    });
-  }
-
-  // Check duplicate enrollment number
-  const existingEnrollment = db.users.find(
-    u =>
-      u.enrollmentNumber.toLowerCase() ===
-      String(enrollmentNumber).trim().toLowerCase()
-  );
-
-  if (existingEnrollment) {
-    return res.status(400).json({
-      error: 'An account with this enrollment number already exists'
-    });
-  }
-
-  // Create user
-  const newUser = {
-    _id: `usr_std_${Date.now()}`,
-    name: String(name).trim(),
-    email: emailValue,
-    enrollmentNumber: String(enrollmentNumber).trim(),
-    mobileNumber: String(mobileNumber).trim(),
-    department: department || 'Computer Science & Engineering',
-    semester: semester || '1st Semester',
-    role: 'student',
-    verified: true,
-    isBlocked: false,
-    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
-    complaintCount: 0,
-    averageRating: 5.0,
-    totalRatings: 0,
-    favorites: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-
-  db.users.push(newUser);
-
-  const token = jwt.sign(
-    {
-      userId: newUser._id,
-      role: newUser.role
-    },
-    JWT_SECRET,
-    {
-      expiresIn: '7d'
+    if (!name || !email || !enrollmentNumber || !mobileNumber || !password) {
+      return res.status(400).json({ error: 'All fields are required' });
     }
-  );
 
-  return res.status(201).json({
-    message: 'Student registered successfully',
-    user: newUser,
-    token
-  });
+    // ONLY COLLEGE CS GMAIL ALLOWED
+    // Format: 0801CSYYRRRR@sgsits.ac.in
+    const emailValue = String(email).trim().toLowerCase();
+    const collegeEmailRegex = /^0801cs\d{2}\d{4}@sgsits\.ac\.in$/i;
+
+    if (!collegeEmailRegex.test(emailValue)) {
+      return res.status(400).json({
+        error: 'Please use your college CS email. Format: 0801CSYYRRRR@sgsits.ac.in'
+      });
+    }
+
+    const existingEmail = await users.findByEmail(emailValue);
+    if (existingEmail) {
+      return res.status(400).json({ error: 'An account with this email already exists' });
+    }
+
+    const existingEnrollment = await users.findByEnrollment(String(enrollmentNumber).trim());
+    if (existingEnrollment) {
+      return res.status(400).json({ error: 'An account with this enrollment number already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(String(password), 10);
+
+    const newUser = await users.create({
+      name: String(name).trim(),
+      email: emailValue,
+      passwordHash,
+      enrollmentNumber: String(enrollmentNumber).trim(),
+      mobileNumber: String(mobileNumber).trim(),
+      department: department || 'Computer Science & Engineering',
+      semester: semester || '1st Semester',
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`
+    });
+
+    const token = jwt.sign({ userId: newUser._id, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });
+
+    return res.status(201).json({
+      message: 'Student registered successfully',
+      user: stripPassword(newUser),
+      token
+    });
+  } catch (err) {
+    console.error('register error:', err);
+    return res.status(500).json({ error: 'Could not register account' });
+  }
 });
 
 // POST /api/auth/login
 apiRouter.post('/auth/login', async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({
-      error: 'Email and password are required'
-    });
-  }
-
-  const emailValue = String(email).trim().toLowerCase();
-
-  // Find existing user
-  // No college email restriction here
-  // This allows demo accounts to login
-  const user = db.users.find(
-    u => u.email.toLowerCase() === emailValue
-  );
-
-  if (!user) {
-    return res.status(400).json({
-      error: 'Invalid email or password'
-    });
-  }
-
-  if (user.isBlocked) {
-    return res.status(403).json({
-      error: 'ACCOUNT BLOCKED: You have received 5 or more verified complaints. Only CS Admin can unblock your account.'
-    });
-  }
-
-  const token = jwt.sign(
-    {
-      userId: user._id,
-      role: user.role
-    },
-    JWT_SECRET,
-    {
-      expiresIn: '7d'
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
     }
-  );
 
-  return res.json({
-    message: 'Login successful',
-    user,
-    token
-  });
+    const emailValue = String(email).trim().toLowerCase();
+    const user = await users.findByEmail(emailValue);
+
+    if (!user) {
+      return res.status(400).json({ error: 'Invalid email or password' });
+    }
+
+    if (user.isBlocked) {
+      return res.status(403).json({
+        error: 'ACCOUNT BLOCKED: You have received 5 or more verified complaints. Only CS Admin can unblock your account.'
+      });
+    }
+
+    const passwordMatches = await users.verifyPassword(String(password), user.passwordHash);
+    if (!passwordMatches) {
+      return res.status(400).json({ error: 'Invalid email or password' });
+    }
+
+    const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+
+    return res.json({
+      message: 'Login successful',
+      user: stripPassword(user),
+      token
+    });
+  } catch (err) {
+    console.error('login error:', err);
+    return res.status(500).json({ error: 'Could not log in' });
+  }
 });
 
 // GET /api/auth/me
 apiRouter.get('/auth/me', authenticateToken, (req, res) => {
-  return res.json({ user: req.user });
+  return res.json({ user: stripPassword(req.user) });
 });
 
 // USER APIs: route -> controller -> model
@@ -207,265 +182,238 @@ apiRouter.use('/users', createUserRouter(authenticateToken));
 // ----------------------------------------------------
 
 // GET /api/items
-apiRouter.get('/items', (req, res) => {
-  const { search, category, minPrice, maxPrice, availableOnly, condition } = req.query;
-
-  let filtered = [...db.items];
-
-  if (search) {
-    const q = search.toLowerCase();
-    filtered = filtered.filter(i =>
-      i.title.toLowerCase().includes(q) ||
-      i.description.toLowerCase().includes(q) ||
-      i.pickupLocation.toLowerCase().includes(q)
-    );
+apiRouter.get('/items', async (req, res) => {
+  try {
+    const { search, category, minPrice, maxPrice, availableOnly, condition } = req.query;
+    const result = await items.findAll({ search, category, minPrice, maxPrice, availableOnly, condition });
+    return res.json({ items: result, total: result.length });
+  } catch (err) {
+    console.error('list items error:', err);
+    return res.status(500).json({ error: 'Could not load items' });
   }
-
-  if (category && category !== 'All') {
-    filtered = filtered.filter(i => i.category === category);
-  }
-
-  if (condition) {
-    filtered = filtered.filter(i => i.condition === condition);
-  }
-
-  if (availableOnly === 'true') {
-    filtered = filtered.filter(i => i.availability === true);
-  }
-
-  if (minPrice) {
-    filtered = filtered.filter(i => i.rentPricePerDay >= Number(minPrice));
-  }
-
-  if (maxPrice) {
-    filtered = filtered.filter(i => i.rentPricePerDay <= Number(maxPrice));
-  }
-
-  // Sort by latest
-  filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  return res.json({ items: filtered, total: filtered.length });
 });
 
 // GET /api/items/my/listings
-apiRouter.get('/items/my/listings', authenticateToken, (req, res) => {
-  const myListings = db.items.filter(i => i.ownerId === req.user._id);
-  return res.json({ items: myListings });
+apiRouter.get('/items/my/listings', authenticateToken, async (req, res) => {
+  try {
+    const myListings = await items.findByOwnerId(req.user._id);
+    return res.json({ items: myListings });
+  } catch (err) {
+    console.error('my listings error:', err);
+    return res.status(500).json({ error: 'Could not load your listings' });
+  }
 });
 
 // GET /api/items/:id
-apiRouter.get('/items/:id', (req, res) => {
-  const item = db.items.find(i => i._id === req.params.id);
-  if (!item) {
-    return res.status(404).json({ error: 'Resource listing not found' });
+apiRouter.get('/items/:id', async (req, res) => {
+  try {
+    const item = await items.findById(req.params.id);
+    if (!item) {
+      return res.status(404).json({ error: 'Resource listing not found' });
+    }
+
+    const ownerRatings = await ratings.findForUser(item.ownerId);
+
+    return res.json({
+      item,
+      owner: {
+        _id: item.ownerId,
+        name: item.ownerName,
+        email: item.ownerEmail,
+        department: item.department,
+        semester: item.ownerSemester,
+        avatar: item.ownerAvatar,
+        averageRating: item.averageRating,
+        totalRatings: item.totalRatings
+      },
+      ownerRatings
+    });
+  } catch (err) {
+    console.error('get item error:', err);
+    return res.status(500).json({ error: 'Could not load item' });
   }
-
-  const owner = db.users.find(u => u._id === item.ownerId);
-  const ownerRatings = db.ratings.filter(r => r.revieweeId === item.ownerId);
-
-  return res.json({
-    item,
-    owner: owner ? {
-      _id: owner._id,
-      name: owner.name,
-      email: owner.email,
-      department: owner.department,
-      semester: owner.semester,
-      avatar: owner.avatar,
-      averageRating: owner.averageRating,
-      totalRatings: owner.totalRatings
-    } : null,
-    ownerRatings
-  });
 });
 
 // POST /api/items
-apiRouter.post('/items', authenticateToken, (req, res) => {
-  const user = req.user;
-  const { title, category, description, images, bill, rentPricePerDay, securityDeposit, condition, pickupLocation } = req.body;
+apiRouter.post('/items', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const { title, category, description, images, rentPricePerDay, securityDeposit, condition, pickupLocation } = req.body;
 
-  if (!title || !category || !description || !rentPricePerDay || !pickupLocation) {
-    return res.status(400).json({ error: 'Please provide all required item details' });
+    if (!title || !category || !description || !rentPricePerDay || !pickupLocation) {
+      return res.status(400).json({ error: 'Please provide all required item details' });
+    }
+
+    const newItem = await items.create({
+      ownerId: user._id,
+      title,
+      category,
+      description,
+      images: Array.isArray(images) && images.length > 0
+        ? images
+        : ['https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=800'],
+      rentPricePerDay: Number(rentPricePerDay),
+      securityDeposit: Number(securityDeposit || 0),
+      condition: condition || 'Good',
+      pickupLocation
+    });
+
+    return res.status(201).json({ message: 'Item listed successfully', item: newItem });
+  } catch (err) {
+    console.error('create item error:', err);
+    return res.status(500).json({ error: 'Could not create listing' });
   }
-
-  const newItem = {
-    _id: `itm_${Date.now()}`,
-    ownerId: user._id,
-    ownerName: user.name,
-    ownerEmail: user.email,
-    ownerPhone: user.mobileNumber,
-    ownerAvatar: user.avatar,
-    ownerSemester: user.semester,
-    title,
-    category,
-    description,
-    images: Array.isArray(images) && images.length > 0 ? images : ['https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=800'],
-    bill: bill || undefined,
-    rentPricePerDay: Number(rentPricePerDay),
-    securityDeposit: Number(securityDeposit || 0),
-    availability: true,
-    condition: condition || 'Good',
-    pickupLocation,
-    blockedDates: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-
-  db.items.unshift(newItem);
-
-  return res.status(201).json({ message: 'Item listed successfully', item: newItem });
 });
 
 // PUT /api/items/:id
-apiRouter.put('/items/:id', authenticateToken, (req, res) => {
-  const user = req.user;
-  const item = db.items.find(i => i._id === req.params.id);
+apiRouter.put('/items/:id', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const item = await items.findById(req.params.id);
 
-  if (!item) {
-    return res.status(404).json({ error: 'Item not found' });
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    if (item.ownerId !== user._id && user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized to modify this listing' });
+    }
+
+    const { title, category, description, images, rentPricePerDay, securityDeposit, availability, condition, pickupLocation } = req.body;
+
+    const changes = {};
+    if (title) changes.title = title;
+    if (category) changes.category = category;
+    if (description) changes.description = description;
+    if (images) changes.images = images;
+    if (rentPricePerDay !== undefined) changes.rentPricePerDay = Number(rentPricePerDay);
+    if (securityDeposit !== undefined) changes.securityDeposit = Number(securityDeposit);
+    if (availability !== undefined) changes.availability = Boolean(availability);
+    if (condition) changes.condition = condition;
+    if (pickupLocation) changes.pickupLocation = pickupLocation;
+
+    const updated = await items.update(req.params.id, changes);
+    return res.json({ message: 'Item listing updated', item: updated });
+  } catch (err) {
+    console.error('update item error:', err);
+    return res.status(500).json({ error: 'Could not update listing' });
   }
-
-  if (item.ownerId !== user._id && user.role !== 'admin') {
-    return res.status(403).json({ error: 'Unauthorized to modify this listing' });
-  }
-
-  const { title, category, description, images, bill, rentPricePerDay, securityDeposit, availability, condition, pickupLocation } = req.body;
-
-  if (title) item.title = title;
-  if (category) item.category = category;
-  if (description) item.description = description;
-  if (images) item.images = images;
-  if (bill !== undefined) item.bill = bill;
-  if (rentPricePerDay !== undefined) item.rentPricePerDay = Number(rentPricePerDay);
-  if (securityDeposit !== undefined) item.securityDeposit = Number(securityDeposit);
-  if (availability !== undefined) item.availability = Boolean(availability);
-  if (condition) item.condition = condition;
-  if (pickupLocation) item.pickupLocation = pickupLocation;
-  item.updatedAt = new Date().toISOString();
-
-  return res.json({ message: 'Item listing updated', item });
 });
 
 // DELETE /api/items/:id
-apiRouter.delete('/items/:id', authenticateToken, (req, res) => {
-  const user = req.user;
-  const index = db.items.findIndex(i => i._id === req.params.id);
+apiRouter.delete('/items/:id', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const item = await items.findById(req.params.id);
 
-  if (index === -1) {
-    return res.status(404).json({ error: 'Item not found' });
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    if (item.ownerId !== user._id && user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized to delete this listing' });
+    }
+
+    await items.delete(req.params.id);
+    return res.json({ message: 'Listing deleted successfully' });
+  } catch (err) {
+    console.error('delete item error:', err);
+    return res.status(500).json({ error: 'Could not delete listing' });
   }
-
-  const item = db.items[index];
-  if (item.ownerId !== user._id && user.role !== 'admin') {
-    return res.status(403).json({ error: 'Unauthorized to delete this listing' });
-  }
-
-  db.items.splice(index, 1);
-  return res.json({ message: 'Listing deleted successfully' });
 });
 
 // GET /api/items/:id/booked-dates
-// Returns the date ranges that are unavailable for this item, from two
-// sources: (1) active bookings (Pending/Accepted) and (2) dates the owner
-// manually blocked (e.g. "I'm out of town"). Each range is tagged with a
-// `source` so the frontend can show why it's unavailable.
-apiRouter.get('/items/:id/booked-dates', (req, res) => {
-  const itemId = req.params.id;
-  const item = db.items.find(i => i._id === itemId);
-  if (!item) {
-    return res.status(404).json({ error: 'Item not found' });
-  }
+apiRouter.get('/items/:id/booked-dates', async (req, res) => {
+  try {
+    const itemId = req.params.id;
+    const item = await items.findById(itemId);
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
 
-  const fromBookings = db.bookings
-    .filter(b => b.itemId === itemId && (b.status === 'Pending' || b.status === 'Accepted'))
-    .map(b => ({
+    const activeBookings = await bookings.findActiveForItem(itemId);
+    const fromBookings = activeBookings.map((b) => ({
       startDate: b.startDate,
       endDate: b.endDate,
       status: b.status,
       source: 'booking'
     }));
 
-  const fromOwner = (item.blockedDates || []).map(d => ({
-    _id: d._id,
-    startDate: d.startDate,
-    endDate: d.endDate,
-    reason: d.reason,
-    source: 'owner'
-  }));
+    const ownerBlocks = await blockedDates.findByItemId(itemId);
+    const fromOwner = ownerBlocks.map((d) => ({
+      _id: d._id,
+      startDate: d.startDate,
+      endDate: d.endDate,
+      reason: d.reason,
+      source: 'owner'
+    }));
 
-  return res.json({ bookedRanges: [...fromBookings, ...fromOwner] });
+    return res.json({ bookedRanges: [...fromBookings, ...fromOwner] });
+  } catch (err) {
+    console.error('booked-dates error:', err);
+    return res.status(500).json({ error: 'Could not load booked dates' });
+  }
 });
 
 // POST /api/items/:id/blocked-dates
-// Owner (or admin) manually marks a date range as unavailable, independent
-// of any booking — e.g. the owner is traveling and the item can't be
-// picked up/dropped off during that window.
-apiRouter.post('/items/:id/blocked-dates', authenticateToken, (req, res) => {
-  const user = req.user;
-  const item = db.items.find(i => i._id === req.params.id);
+apiRouter.post('/items/:id/blocked-dates', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const item = await items.findById(req.params.id);
 
-  if (!item) {
-    return res.status(404).json({ error: 'Item not found' });
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    if (item.ownerId !== user._id && user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only the item owner can block dates for this listing' });
+    }
+
+    const { startDate, endDate, reason } = req.body;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'Start date and end date are required' });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ error: 'Invalid start or end date' });
+    }
+    if (end < start) {
+      return res.status(400).json({ error: 'End date cannot be before start date' });
+    }
+
+    const newBlock = await blockedDates.create({ itemId: req.params.id, startDate, endDate, reason });
+    const allBlocks = await blockedDates.findByItemId(req.params.id);
+
+    return res.status(201).json({ message: 'Dates blocked successfully', blockedDate: newBlock, blockedDates: allBlocks });
+  } catch (err) {
+    console.error('block dates error:', err);
+    return res.status(500).json({ error: 'Could not block dates' });
   }
-
-  if (item.ownerId !== user._id && user.role !== 'admin') {
-    return res.status(403).json({ error: 'Only the item owner can block dates for this listing' });
-  }
-
-  const { startDate, endDate, reason } = req.body;
-
-  if (!startDate || !endDate) {
-    return res.status(400).json({ error: 'Start date and end date are required' });
-  }
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-    return res.status(400).json({ error: 'Invalid start or end date' });
-  }
-
-  if (end < start) {
-    return res.status(400).json({ error: 'End date cannot be before start date' });
-  }
-
-  if (!item.blockedDates) item.blockedDates = [];
-
-  const newBlock = {
-    _id: `blk_${Date.now()}`,
-    startDate,
-    endDate,
-    reason: reason || 'Owner unavailable'
-  };
-
-  item.blockedDates.push(newBlock);
-  item.updatedAt = new Date().toISOString();
-
-  return res.status(201).json({ message: 'Dates blocked successfully', blockedDate: newBlock, blockedDates: item.blockedDates });
 });
 
 // DELETE /api/items/:id/blocked-dates/:blockId
-apiRouter.delete('/items/:id/blocked-dates/:blockId', authenticateToken, (req, res) => {
-  const user = req.user;
-  const item = db.items.find(i => i._id === req.params.id);
+apiRouter.delete('/items/:id/blocked-dates/:blockId', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const item = await items.findById(req.params.id);
 
-  if (!item) {
-    return res.status(404).json({ error: 'Item not found' });
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    if (item.ownerId !== user._id && user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only the item owner can modify blocked dates for this listing' });
+    }
+
+    const removed = await blockedDates.delete(req.params.blockId, req.params.id);
+    if (!removed) {
+      return res.status(404).json({ error: 'Blocked date entry not found' });
+    }
+
+    const allBlocks = await blockedDates.findByItemId(req.params.id);
+    return res.json({ message: 'Blocked dates removed', blockedDates: allBlocks });
+  } catch (err) {
+    console.error('unblock dates error:', err);
+    return res.status(500).json({ error: 'Could not remove blocked dates' });
   }
-
-  if (item.ownerId !== user._id && user.role !== 'admin') {
-    return res.status(403).json({ error: 'Only the item owner can modify blocked dates for this listing' });
-  }
-
-  const index = (item.blockedDates || []).findIndex(d => d._id === req.params.blockId);
-  if (index === -1) {
-    return res.status(404).json({ error: 'Blocked date entry not found' });
-  }
-
-  item.blockedDates.splice(index, 1);
-  item.updatedAt = new Date().toISOString();
-
-  return res.json({ message: 'Blocked dates removed', blockedDates: item.blockedDates });
 });
 
 // ----------------------------------------------------
@@ -473,41 +421,46 @@ apiRouter.delete('/items/:id/blocked-dates/:blockId', authenticateToken, (req, r
 // ----------------------------------------------------
 
 // GET /api/favorites
-apiRouter.get('/favorites', authenticateToken, (req, res) => {
-  const user = req.user;
-  const favoriteIds = user.favorites || [];
-  const favoriteItems = db.items.filter(i => favoriteIds.includes(i._id));
-  return res.json({ items: favoriteItems });
+apiRouter.get('/favorites', authenticateToken, async (req, res) => {
+  try {
+    const favoriteItems = await favorites.itemsForUser(req.user._id);
+    return res.json({ items: favoriteItems });
+  } catch (err) {
+    console.error('favorites error:', err);
+    return res.status(500).json({ error: 'Could not load favorites' });
+  }
 });
 
 // POST /api/favorites/:itemId  (toggles on/off)
-apiRouter.post('/favorites/:itemId', authenticateToken, (req, res) => {
-  const user = req.user;
-  const { itemId } = req.params;
+apiRouter.post('/favorites/:itemId', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const { itemId } = req.params;
 
-  const item = db.items.find(i => i._id === itemId);
-  if (!item) {
-    return res.status(404).json({ error: 'Item not found' });
+    const item = await items.findById(itemId);
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    const currentlyFavorite = await favorites.isFavorite(user._id, itemId);
+    if (currentlyFavorite) {
+      await favorites.remove(user._id, itemId);
+    } else {
+      await favorites.add(user._id, itemId);
+    }
+    const isFavorite = !currentlyFavorite;
+
+    const favoriteItems = await favorites.itemsForUser(user._id);
+
+    return res.json({
+      message: isFavorite ? 'Added to favorites' : 'Removed from favorites',
+      isFavorite,
+      favorites: favoriteItems.map((i) => i._id)
+    });
+  } catch (err) {
+    console.error('toggle favorite error:', err);
+    return res.status(500).json({ error: 'Could not update favorites' });
   }
-
-  if (!user.favorites) user.favorites = [];
-
-  const existingIndex = user.favorites.indexOf(itemId);
-  let isFavorite;
-
-  if (existingIndex === -1) {
-    user.favorites.push(itemId);
-    isFavorite = true;
-  } else {
-    user.favorites.splice(existingIndex, 1);
-    isFavorite = false;
-  }
-
-  return res.json({
-    message: isFavorite ? 'Added to favorites' : 'Removed from favorites',
-    isFavorite,
-    favorites: user.favorites
-  });
 });
 
 // ----------------------------------------------------
@@ -515,248 +468,262 @@ apiRouter.post('/favorites/:itemId', authenticateToken, (req, res) => {
 // ----------------------------------------------------
 
 // POST /api/bookings
-apiRouter.post('/bookings', authenticateToken, (req, res) => {
-  const borrower = req.user;
-  const { itemId, startDate, endDate } = req.body;
+apiRouter.post('/bookings', authenticateToken, async (req, res) => {
+  try {
+    const borrower = req.user;
+    const { itemId, startDate, endDate } = req.body;
 
-  if (!itemId || !startDate || !endDate) {
-    return res.status(400).json({ error: 'Item ID, start date, and end date are required' });
+    if (!itemId || !startDate || !endDate) {
+      return res.status(400).json({ error: 'Item ID, start date, and end date are required' });
+    }
+
+    const item = await items.findById(itemId);
+    if (!item) {
+      return res.status(404).json({ error: 'Resource item not found' });
+    }
+    if (!item.availability) {
+      return res.status(400).json({ error: 'This listing has been turned off by the owner' });
+    }
+    if (item.ownerId === borrower._id) {
+      return res.status(400).json({ error: 'You cannot rent your own listed item' });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ error: 'Invalid start or end date' });
+    }
+    if (end < start) {
+      return res.status(400).json({ error: 'End date cannot be before start date' });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const maxBookingDate = new Date(today);
+    maxBookingDate.setDate(maxBookingDate.getDate() + 30);
+
+    if (start < today) {
+      return res.status(400).json({ error: 'Booking start date cannot be in the past' });
+    }
+    if (end > maxBookingDate) {
+      return res.status(400).json({ error: 'Bookings can only be made up to 30 days in advance' });
+    }
+
+    const activeBookings = await bookings.findActiveForItem(itemId);
+    const hasBookingOverlap = activeBookings.some((b) => {
+      const bStart = new Date(b.startDate);
+      const bEnd = new Date(b.endDate);
+      return start <= bEnd && end >= bStart;
+    });
+
+    const ownerBlocks = await blockedDates.findByItemId(itemId);
+    const hasOwnerBlockOverlap = ownerBlocks.some((d) => {
+      const dStart = new Date(d.startDate);
+      const dEnd = new Date(d.endDate);
+      return start <= dEnd && end >= dStart;
+    });
+
+    if (hasBookingOverlap || hasOwnerBlockOverlap) {
+      return res.status(400).json({ error: 'This item is already unavailable for some of the selected dates. Check the available dates below.' });
+    }
+
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+    const totalCost = diffDays * item.rentPricePerDay + item.securityDeposit;
+
+    const newBooking = await bookings.create({
+      itemId: item._id,
+      borrowerId: borrower._id,
+      ownerId: item.ownerId,
+      startDate,
+      endDate,
+      totalDays: diffDays,
+      totalCost
+    });
+
+    await notifications.create({
+      userId: item.ownerId,
+      title: 'New Booking Request',
+      message: `${borrower.name} requested to rent "${item.title}" for ${diffDays} days.`,
+      type: 'booking',
+      link: '/bookings'
+    });
+
+    return res.status(201).json({ message: 'Booking request sent successfully', booking: newBooking });
+  } catch (err) {
+    console.error('create booking error:', err);
+    return res.status(500).json({ error: 'Could not create booking' });
   }
-
-  const item = db.items.find(i => i._id === itemId);
-  if (!item) {
-    return res.status(404).json({ error: 'Resource item not found' });
-  }
-
-  if (!item.availability) {
-    return res.status(400).json({ error: 'This listing has been turned off by the owner' });
-  }
-
-  if (item.ownerId === borrower._id) {
-    return res.status(400).json({ error: 'You cannot rent your own listed item' });
-  }
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-    return res.status(400).json({ error: 'Invalid start or end date' });
-  }
-
-  if (end < start) {
-    return res.status(400).json({ error: 'End date cannot be before start date' });
-  }
-
-  // Booking window rules: cannot book in the past, and cannot book more
-  // than 30 days out from today.
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const maxBookingDate = new Date(today);
-  maxBookingDate.setDate(maxBookingDate.getDate() + 30);
-
-  if (start < today) {
-    return res.status(400).json({ error: 'Booking start date cannot be in the past' });
-  }
-
-  if (end > maxBookingDate) {
-    return res.status(400).json({ error: 'Bookings can only be made up to 30 days in advance' });
-  }
-
-  // Date-range overlap check: block only if this item already has an
-  // active (Pending/Accepted) booking OR an owner-blocked range whose
-  // dates overlap the requested range. Other non-overlapping dates
-  // remain bookable.
-  const hasBookingOverlap = db.bookings.some(b => {
-    if (b.itemId !== itemId) return false;
-    if (b.status !== 'Pending' && b.status !== 'Accepted') return false;
-    const bStart = new Date(b.startDate);
-    const bEnd = new Date(b.endDate);
-    return start <= bEnd && end >= bStart;
-  });
-
-  const hasOwnerBlockOverlap = (item.blockedDates || []).some(d => {
-    const dStart = new Date(d.startDate);
-    const dEnd = new Date(d.endDate);
-    return start <= dEnd && end >= dStart;
-  });
-
-  if (hasBookingOverlap || hasOwnerBlockOverlap) {
-    return res.status(400).json({ error: 'This item is already unavailable for some of the selected dates. Check the available dates below.' });
-  }
-
-  // Calculate rental days
-  const diffTime = Math.abs(end.getTime() - start.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
-
-  const totalCost = (diffDays * item.rentPricePerDay) + item.securityDeposit;
-
-  const newBooking = {
-    _id: `bkg_${Date.now()}`,
-    itemId: item._id,
-    itemTitle: item.title,
-    itemImage: item.images[0],
-    itemCategory: item.category,
-    rentPricePerDay: item.rentPricePerDay,
-    securityDeposit: item.securityDeposit,
-    borrowerId: borrower._id,
-    borrowerName: borrower.name,
-    borrowerEmail: borrower.email,
-    ownerId: item.ownerId,
-    ownerName: item.ownerName,
-    ownerEmail: item.ownerEmail,
-    startDate,
-    endDate,
-    totalDays: diffDays,
-    totalCost,
-    status: 'Pending',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-
-  db.bookings.unshift(newBooking);
-
-  // Notify Owner
-  db.notifications.push({
-    _id: `ntf_${Date.now()}`,
-    userId: item.ownerId,
-    title: 'New Booking Request',
-    message: `${borrower.name} requested to rent "${item.title}" for ${diffDays} days.`,
-    type: 'booking',
-    read: false,
-    link: '/bookings',
-    createdAt: new Date().toISOString()
-  });
-
-  return res.status(201).json({
-    message: 'Booking request sent successfully',
-    booking: newBooking
-  });
 });
 
 // GET /api/bookings/my
-apiRouter.get('/bookings/my', authenticateToken, (req, res) => {
-  const userId = req.user._id;
-
-  const borrowed = db.bookings.filter(b => b.borrowerId === userId);
-  const ownerRequests = db.bookings.filter(b => b.ownerId === userId);
-
-  return res.json({ borrowed, ownerRequests });
+apiRouter.get('/bookings/my', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const [borrowed, ownerRequests] = await Promise.all([
+      bookings.findByBorrower(userId),
+      bookings.findByOwner(userId)
+    ]);
+    return res.json({ borrowed, ownerRequests });
+  } catch (err) {
+    console.error('my bookings error:', err);
+    return res.status(500).json({ error: 'Could not load bookings' });
+  }
 });
 
 // PUT /api/bookings/:id/status
-apiRouter.put('/bookings/:id/status', authenticateToken, (req, res) => {
-  const user = req.user;
-  const { status } = req.body;
+apiRouter.put('/bookings/:id/status', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const { status } = req.body;
 
-  const booking = db.bookings.find(b => b._id === req.params.id);
-  if (!booking) {
-    return res.status(404).json({ error: 'Booking not found' });
+    const booking = await bookings.findById(req.params.id);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    const isOwner = booking.ownerId === user._id;
+    const isBorrower = booking.borrowerId === user._id;
+
+    if (!isOwner && !isBorrower && user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized for this booking action' });
+    }
+    if (['Accepted', 'Rejected'].includes(status) && !isOwner && user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only item owner can accept or reject booking requests' });
+    }
+
+    const updated = await bookings.updateStatus(req.params.id, status);
+
+    const targetUserId = isOwner ? booking.borrowerId : booking.ownerId;
+    await notifications.create({
+      userId: targetUserId,
+      title: `Booking ${status}`,
+      message: `Booking for "${booking.itemTitle}" status updated to: ${status}`,
+      type: 'booking',
+      link: '/bookings'
+    });
+
+    return res.json({ message: `Booking status updated to ${status}`, booking: updated });
+  } catch (err) {
+    console.error('update booking status error:', err);
+    return res.status(500).json({ error: 'Could not update booking status' });
   }
-
-  // Permission check
-  const isOwner = booking.ownerId === user._id;
-  const isBorrower = booking.borrowerId === user._id;
-
-  if (!isOwner && !isBorrower && user.role !== 'admin') {
-    return res.status(403).json({ error: 'Not authorized for this booking action' });
-  }
-
-  if (['Accepted', 'Rejected'].includes(status) && !isOwner && user.role !== 'admin') {
-    return res.status(403).json({ error: 'Only item owner can accept or reject booking requests' });
-  }
-
-  booking.status = status;
-  booking.updatedAt = new Date().toISOString();
-
-  // Note: item.availability is now a manual owner on/off switch only
-  // (toggled from My Listings). Per-date booking conflicts are handled
-  // separately via date-range overlap checks, so status changes here no
-  // longer touch item.availability.
-
-  // Send Notification to counterparty
-  const targetUserId = isOwner ? booking.borrowerId : booking.ownerId;
-  db.notifications.push({
-    _id: `ntf_${Date.now()}`,
-    userId: targetUserId,
-    title: `Booking ${status}`,
-    message: `Booking for "${booking.itemTitle}" status updated to: ${status}`,
-    type: 'booking',
-    read: false,
-    link: '/bookings',
-    createdAt: new Date().toISOString()
-  });
-
-  return res.json({ message: `Booking status updated to ${status}`, booking });
 });
 
 // ----------------------------------------------------
 // CHAT APIs
 // ----------------------------------------------------
 
+// GET /api/chat/conversations
+apiRouter.get('/chat/conversations', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const [asBorrower, asOwner] = await Promise.all([bookings.findByBorrower(userId), bookings.findByOwner(userId)]);
+    const relevant = [...asBorrower, ...asOwner].filter(
+      (b) => b.status === 'Accepted' || b.status === 'Completed'
+    );
+
+    const conversations = await Promise.all(
+      relevant.map(async (booking) => {
+        const otherUserId = booking.ownerId === userId ? booking.borrowerId : booking.ownerId;
+        const otherUser = await users.findById(otherUserId);
+        const lastMessage = await messages.lastForBooking(booking._id);
+        const unreadCount = await messages.unreadCountForUser(booking._id, userId);
+
+        return {
+          booking,
+          participant: {
+            _id: otherUserId,
+            name: otherUser?.name || (booking.ownerId === userId ? booking.borrowerName : booking.ownerName),
+            avatar: otherUser?.avatar || null
+          },
+          lastMessage,
+          unreadCount,
+          lastActivityAt: lastMessage?.timestamp || booking.updatedAt || booking.createdAt
+        };
+      })
+    );
+
+    conversations.sort((a, b) => new Date(b.lastActivityAt) - new Date(a.lastActivityAt));
+
+    return res.json({ conversations });
+  } catch (err) {
+    console.error('conversations error:', err);
+    return res.status(500).json({ error: 'Could not load conversations' });
+  }
+});
+
 // GET /api/chat/messages/:bookingId
-apiRouter.get('/chat/messages/:bookingId', authenticateToken, (req, res) => {
-  const { bookingId } = req.params;
-  const booking = db.bookings.find(b => b._id === bookingId);
+apiRouter.get('/chat/messages/:bookingId', authenticateToken, async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const booking = await bookings.findById(bookingId);
 
-  if (!booking) {
-    return res.status(404).json({ error: 'Booking not found' });
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+    if (booking.borrowerId !== req.user._id && booking.ownerId !== req.user._id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied to this booking chat' });
+    }
+    if (booking.status !== 'Accepted' && booking.status !== 'Completed' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Chat is only available after the owner accepts this booking' });
+    }
+
+    const bookingMessages = await messages.findByBooking(bookingId);
+    await messages.markReadForReceiver(bookingId, req.user._id);
+
+    return res.json({ messages: bookingMessages, booking });
+  } catch (err) {
+    console.error('chat messages error:', err);
+    return res.status(500).json({ error: 'Could not load messages' });
   }
+});
 
-  if (booking.borrowerId !== req.user._id && booking.ownerId !== req.user._id && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Access denied to this booking chat' });
+// PUT /api/chat/messages/:bookingId/read
+apiRouter.put('/chat/messages/:bookingId/read', authenticateToken, async (req, res) => {
+  try {
+    const booking = await bookings.findById(req.params.bookingId);
+    if (!booking || (booking.borrowerId !== req.user._id && booking.ownerId !== req.user._id && req.user.role !== 'admin')) {
+      return res.status(403).json({ error: 'Access denied to this booking chat' });
+    }
+
+    await messages.markReadForReceiver(booking._id, req.user._id);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('mark read error:', err);
+    return res.status(500).json({ error: 'Could not mark messages as read' });
   }
-
-  // Chat only opens once the owner has accepted the booking (or later,
-  // once completed). Pending/Rejected requests have no chat yet.
-  if (booking.status !== 'Accepted' && booking.status !== 'Completed' && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Chat is only available after the owner accepts this booking' });
-  }
-
-  const messages = db.messages.filter(m => m.bookingId === bookingId);
-  return res.json({ messages, booking });
 });
 
 // POST /api/chat/messages
-apiRouter.post('/chat/messages', authenticateToken, (req, res) => {
-  const sender = req.user;
-  const { bookingId, content } = req.body;
+apiRouter.post('/chat/messages', authenticateToken, async (req, res) => {
+  try {
+    const sender = req.user;
+    const { bookingId, content } = req.body;
 
-  if (!bookingId || !content) {
-    return res.status(400).json({ error: 'Booking ID and message content are required' });
+    if (!bookingId || !content) {
+      return res.status(400).json({ error: 'Booking ID and message content are required' });
+    }
+
+    const booking = await bookings.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking reference not found' });
+    }
+    if (booking.borrowerId !== sender._id && booking.ownerId !== sender._id && sender.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied to this booking chat' });
+    }
+    if (booking.status !== 'Accepted' && booking.status !== 'Completed' && sender.role !== 'admin') {
+      return res.status(403).json({ error: 'Chat is only available after the owner accepts this booking' });
+    }
+
+    const receiverId = booking.borrowerId === sender._id ? booking.ownerId : booking.borrowerId;
+    const newMsg = await messages.create({ bookingId, senderId: sender._id, receiverId, content });
+
+    return res.status(201).json({ message: newMsg });
+  } catch (err) {
+    console.error('send message error:', err);
+    return res.status(500).json({ error: 'Could not send message' });
   }
-
-  const booking = db.bookings.find(b => b._id === bookingId);
-  if (!booking) {
-    return res.status(404).json({ error: 'Booking reference not found' });
-  }
-
-  if (booking.borrowerId !== sender._id && booking.ownerId !== sender._id && sender.role !== 'admin') {
-    return res.status(403).json({ error: 'Access denied to this booking chat' });
-  }
-
-  if (booking.status !== 'Accepted' && booking.status !== 'Completed' && sender.role !== 'admin') {
-    return res.status(403).json({ error: 'Chat is only available after the owner accepts this booking' });
-  }
-
-  const receiverId = booking.borrowerId === sender._id ? booking.ownerId : booking.borrowerId;
-  const receiverName = booking.borrowerId === sender._id ? booking.ownerName : booking.borrowerName;
-
-  const newMsg = {
-    _id: `msg_${Date.now()}`,
-    bookingId,
-    senderId: sender._id,
-    senderName: sender.name,
-    receiverId,
-    receiverName,
-    content,
-    timestamp: new Date().toISOString(),
-    isRead: false
-  };
-
-  db.messages.push(newMsg);
-
-  return res.status(201).json({ message: newMsg });
 });
 
 // ----------------------------------------------------
@@ -764,52 +731,53 @@ apiRouter.post('/chat/messages', authenticateToken, (req, res) => {
 // ----------------------------------------------------
 
 // POST /api/complaints
-apiRouter.post('/complaints', authenticateToken, (req, res) => {
-  const reporter = req.user;
-  const { reportedUserId, bookingId, type, description, proofUrl, itemTitle } = req.body;
+apiRouter.post('/complaints', authenticateToken, async (req, res) => {
+  try {
+    const reporter = req.user;
+    const { reportedUserId, bookingId, type, description, proofUrl, itemTitle } = req.body;
 
-  if (!reportedUserId || !type || !description) {
-    return res.status(400).json({ error: 'Reported user, complaint type, and description are required' });
+    if (!reportedUserId || !type || !description) {
+      return res.status(400).json({ error: 'Reported user, complaint type, and description are required' });
+    }
+
+    const trimmed = String(reportedUserId).trim();
+    const reportedUser = (await users.findById(trimmed)) || (await users.findByEmail(trimmed));
+    if (!reportedUser) {
+      return res.status(404).json({ error: 'Reported user not found' });
+    }
+
+    const newComplaint = await complaints.create({
+      reporterId: reporter._id,
+      reportedUserId: reportedUser._id,
+      bookingId,
+      itemTitle,
+      type,
+      description,
+      proofUrl: proofUrl || 'https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&q=80&w=800'
+    });
+
+    await checkAndApplyAutoBlock(reportedUser._id);
+
+    return res.status(201).json({
+      message: 'Complaint filed successfully. Admin will review the proof and take action.',
+      complaint: newComplaint
+    });
+  } catch (err) {
+    console.error('create complaint error:', err);
+    return res.status(500).json({ error: 'Could not file complaint' });
   }
-
-  const reportedUser = db.users.find(u => u._id === reportedUserId);
-  if (!reportedUser) {
-    return res.status(404).json({ error: 'Reported student account not found' });
-  }
-
-  const newComplaint = {
-    _id: `cmp_${Date.now()}`,
-    reporterId: reporter._id,
-    reporterName: reporter.name,
-    reportedUserId,
-    reportedUserName: reportedUser.name,
-    bookingId,
-    itemTitle,
-    type,
-    description,
-    proofUrl: proofUrl || 'https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&q=80&w=800',
-    status: 'Pending',
-    createdAt: new Date().toISOString()
-  };
-
-  db.complaints.unshift(newComplaint);
-
-  // Check auto-block count update
-  db.checkAndApplyAutoBlock(reportedUserId);
-
-  return res.status(201).json({
-    message: 'Complaint filed successfully. Admin will review the proof and take action.',
-    complaint: newComplaint
-  });
 });
 
 // GET /api/complaints/my
-apiRouter.get('/complaints/my', authenticateToken, (req, res) => {
-  const userId = req.user._id;
-  const filed = db.complaints.filter(c => c.reporterId === userId);
-  const againstMe = db.complaints.filter(c => c.reportedUserId === userId);
-
-  return res.json({ filed, againstMe });
+apiRouter.get('/complaints/my', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const [filed, againstMe] = await Promise.all([complaints.findByReporter(userId), complaints.findAgainst(userId)]);
+    return res.json({ filed, againstMe });
+  } catch (err) {
+    console.error('my complaints error:', err);
+    return res.status(500).json({ error: 'Could not load complaints' });
+  }
 });
 
 // ----------------------------------------------------
@@ -817,45 +785,47 @@ apiRouter.get('/complaints/my', authenticateToken, (req, res) => {
 // ----------------------------------------------------
 
 // POST /api/ratings
-apiRouter.post('/ratings', authenticateToken, (req, res) => {
-  const reviewer = req.user;
-  const { bookingId, revieweeId, stars, comment } = req.body;
+apiRouter.post('/ratings', authenticateToken, async (req, res) => {
+  try {
+    const reviewer = req.user;
+    const { bookingId, revieweeId, stars, comment } = req.body;
 
-  if (!bookingId || !revieweeId || !stars) {
-    return res.status(400).json({ error: 'Booking ID, reviewee ID, and star rating (1-5) are required' });
+    if (!bookingId || !revieweeId || !stars) {
+      return res.status(400).json({ error: 'Booking ID, reviewee ID, and star rating (1-5) are required' });
+    }
+
+    const reviewee = await users.findById(revieweeId);
+    if (!reviewee) {
+      return res.status(404).json({ error: 'Student to rate not found' });
+    }
+
+    const newRating = await ratings.create({
+      bookingId,
+      revieweeId,
+      reviewerId: reviewer._id,
+      stars: Number(stars),
+      comment: comment || 'Great CS resource exchange!'
+    });
+
+    const { averageRating, totalRatings } = await ratings.averageForUser(revieweeId);
+    await users.setRatingStats(revieweeId, averageRating, totalRatings);
+
+    return res.status(201).json({ message: 'Rating and review submitted!', rating: newRating });
+  } catch (err) {
+    console.error('create rating error:', err);
+    return res.status(500).json({ error: 'Could not submit rating' });
   }
-
-  const reviewee = db.users.find(u => u._id === revieweeId);
-  if (!reviewee) {
-    return res.status(404).json({ error: 'Student to rate not found' });
-  }
-
-  const newRating = {
-    _id: `rtg_${Date.now()}`,
-    bookingId,
-    reviewerId: reviewer._id,
-    reviewerName: reviewer.name,
-    revieweeId,
-    stars: Number(stars),
-    comment: comment || 'Great CS resource exchange!',
-    createdAt: new Date().toISOString()
-  };
-
-  db.ratings.push(newRating);
-
-  // Recalculate average rating for reviewee
-  const userRatings = db.ratings.filter(r => r.revieweeId === revieweeId);
-  const total = userRatings.reduce((sum, r) => sum + r.stars, 0);
-  reviewee.totalRatings = userRatings.length;
-  reviewee.averageRating = Number((total / userRatings.length).toFixed(1));
-
-  return res.status(201).json({ message: 'Rating and review submitted!', rating: newRating });
 });
 
 // GET /api/ratings/user/:userId
-apiRouter.get('/ratings/user/:userId', (req, res) => {
-  const userRatings = db.ratings.filter(r => r.revieweeId === req.params.userId);
-  return res.json({ ratings: userRatings });
+apiRouter.get('/ratings/user/:userId', async (req, res) => {
+  try {
+    const userRatings = await ratings.findForUser(req.params.userId);
+    return res.json({ ratings: userRatings });
+  } catch (err) {
+    console.error('ratings error:', err);
+    return res.status(500).json({ error: 'Could not load ratings' });
+  }
 });
 
 // ----------------------------------------------------
@@ -863,137 +833,132 @@ apiRouter.get('/ratings/user/:userId', (req, res) => {
 // ----------------------------------------------------
 
 // GET /api/admin/stats
-apiRouter.get('/admin/stats', authenticateToken, requireAdmin, (req, res) => {
-  const totalStudents = db.users.filter(u => u.role === 'student').length;
-  const activeListings = db.items.length;
-  const totalBookings = db.bookings.length;
-  const pendingComplaints = db.complaints.filter(c => c.status === 'Pending' || c.status === 'Under Review').length;
-  const blockedUsers = db.users.filter(u => u.isBlocked).length;
-  const totalRentalVolume = db.bookings
-    .filter(b => b.status === 'Completed' || b.status === 'Accepted')
-    .reduce((sum, b) => sum + b.totalCost, 0);
+apiRouter.get('/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [totalStudents, activeListings, totalBookings, pendingComplaints, blockedUsers, totalRentalVolume] = await Promise.all([
+      users.countStudents(),
+      items.countAll(),
+      bookings.countAll(),
+      complaints.countPending(),
+      users.countBlocked(),
+      bookings.totalRentalVolume()
+    ]);
 
-  return res.json({
-    totalStudents,
-    activeListings,
-    totalBookings,
-    pendingComplaints,
-    blockedUsers,
-    totalRentalVolume
-  });
+    return res.json({ totalStudents, activeListings, totalBookings, pendingComplaints, blockedUsers, totalRentalVolume });
+  } catch (err) {
+    console.error('admin stats error:', err);
+    return res.status(500).json({ error: 'Could not load admin stats' });
+  }
 });
 
 // GET /api/admin/users
-apiRouter.get(
-  '/admin/users',
-  authenticateToken,
-  requireAdmin,
-  (req, res) => {
-
-    const users = db.users.map(user => ({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      enrollmentNumber: user.enrollmentNumber,
-      mobileNumber: user.mobileNumber,
-      department: user.department,
-      semester: user.semester,
-      role: user.role,
-      verified: user.verified,
-      isBlocked: user.isBlocked,
-      avatar: user.avatar,
-      complaintCount: user.complaintCount,
-      averageRating: user.averageRating,
-      totalRatings: user.totalRatings,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt
-    }));
-
-    return res.json({ users });
+apiRouter.get('/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const allUsers = await users.findAllForAdmin();
+    return res.json({ users: allUsers.map(stripPassword) });
+  } catch (err) {
+    console.error('admin users error:', err);
+    return res.status(500).json({ error: 'Could not load users' });
   }
-);
+});
 
 // PUT /api/admin/users/:id/block
-apiRouter.put('/admin/users/:id/block', authenticateToken, requireAdmin, (req, res) => {
-  const targetUser = db.users.find(u => u._id === req.params.id);
+apiRouter.put('/admin/users/:id/block', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const targetUser = await users.findById(req.params.id);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (targetUser.role === 'admin') {
+      return res.status(403).json({ error: 'Admin accounts cannot be blocked or modified.' });
+    }
 
-  if (!targetUser) {
-    return res.status(404).json({
-      error: 'User not found'
+    const { isBlocked } = req.body;
+    const updated = await users.setBlocked(req.params.id, Boolean(isBlocked));
+
+    return res.json({
+      message: `User ${updated.name} ${updated.isBlocked ? 'blocked' : 'unblocked'} successfully.`,
+      user: stripPassword(updated)
     });
+  } catch (err) {
+    console.error('block user error:', err);
+    return res.status(500).json({ error: 'Could not update user' });
   }
-
-  // Admin account cannot be blocked/unblocked
-  if (targetUser.role === 'admin') {
-    return res.status(403).json({
-      error: 'Admin accounts cannot be blocked or modified.'
-    });
-  }
-
-  const { isBlocked } = req.body;
-  targetUser.isBlocked = Boolean(isBlocked);
-  targetUser.updatedAt = new Date().toISOString();
-
-  return res.json({
-    message: `User ${targetUser.name} ${targetUser.isBlocked ? 'blocked' : 'unblocked'} successfully.`,
-    user: targetUser
-  });
 });
 
 // GET /api/admin/complaints
-apiRouter.get('/admin/complaints', authenticateToken, requireAdmin, (req, res) => {
-  return res.json({ complaints: db.complaints });
+apiRouter.get('/admin/complaints', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const allComplaints = await complaints.findAll();
+    return res.json({ complaints: allComplaints });
+  } catch (err) {
+    console.error('admin complaints error:', err);
+    return res.status(500).json({ error: 'Could not load complaints' });
+  }
 });
 
 // PUT /api/admin/complaints/:id
-apiRouter.put('/admin/complaints/:id', authenticateToken, requireAdmin, (req, res) => {
-  const complaint = db.complaints.find(c => c._id === req.params.id);
-  if (!complaint) {
-    return res.status(404).json({ error: 'Complaint not found' });
+apiRouter.put('/admin/complaints/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const complaint = await complaints.findById(req.params.id);
+    if (!complaint) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    const { status, adminNote } = req.body;
+    const updated = await complaints.update(req.params.id, { status, adminNote });
+
+    if (status === 'Resolved') {
+      const isNowBlocked = await checkAndApplyAutoBlock(complaint.reportedUserId);
+      return res.json({
+        message: `Complaint status updated to ${status}.${isNowBlocked ? ' Reported user reached complaint limit and has been AUTO-BLOCKED!' : ''}`,
+        complaint: updated,
+        userAutoBlocked: isNowBlocked
+      });
+    }
+
+    return res.json({ message: 'Complaint updated', complaint: updated });
+  } catch (err) {
+    console.error('update complaint error:', err);
+    return res.status(500).json({ error: 'Could not update complaint' });
   }
-
-  const { status, adminNote } = req.body;
-  if (status) complaint.status = status;
-  if (adminNote) complaint.adminNote = adminNote;
-
-  // Check auto-block trigger if resolved / verified
-  if (status === 'Resolved') {
-    const isNowBlocked = db.checkAndApplyAutoBlock(complaint.reportedUserId);
-    return res.json({
-      message: `Complaint status updated to ${status}.${isNowBlocked ? ' Reported user reached complaint limit and has been AUTO-BLOCKED!' : ''}`,
-      complaint,
-      userAutoBlocked: isNowBlocked
-    });
-  }
-
-  return res.json({ message: 'Complaint updated', complaint });
 });
 
 // DELETE /api/admin/items/:id
-apiRouter.delete('/admin/items/:id', authenticateToken, requireAdmin, (req, res) => {
-  const index = db.items.findIndex(i => i._id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ error: 'Item not found' });
+apiRouter.delete('/admin/items/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const item = await items.findById(req.params.id);
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    await items.delete(req.params.id);
+    return res.json({ message: `Admin deleted fake listing "${item.title}"` });
+  } catch (err) {
+    console.error('admin delete item error:', err);
+    return res.status(500).json({ error: 'Could not delete listing' });
   }
-
-  const deleted = db.items.splice(index, 1)[0];
-  return res.json({ message: `Admin deleted fake listing "${deleted.title}"` });
 });
 
 // ----------------------------------------------------
 // NOTIFICATION APIs
 // ----------------------------------------------------
 
-apiRouter.get('/notifications', authenticateToken, (req, res) => {
-  const list = db.notifications.filter(n => n.userId === req.user._id);
-  list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  return res.json({ notifications: list });
+apiRouter.get('/notifications', authenticateToken, async (req, res) => {
+  try {
+    const list = await notifications.findForUser(req.user._id);
+    return res.json({ notifications: list });
+  } catch (err) {
+    console.error('notifications error:', err);
+    return res.status(500).json({ error: 'Could not load notifications' });
+  }
 });
 
-apiRouter.put('/notifications/:id/read', authenticateToken, (req, res) => {
-  const n = db.notifications.find(item => item._id === req.params.id && item.userId === req.user._id);
-  if (n) {
-    n.read = true;
+apiRouter.put('/notifications/:id/read', authenticateToken, async (req, res) => {
+  try {
+    await notifications.markRead(req.params.id, req.user._id);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('mark notification read error:', err);
+    return res.status(500).json({ error: 'Could not update notification' });
   }
-  return res.json({ success: true });
 });

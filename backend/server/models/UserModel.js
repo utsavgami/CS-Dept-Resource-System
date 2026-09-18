@@ -1,17 +1,14 @@
-import { db } from '../db.js';
+import { users } from '../db.js';
 
 /**
- * Model boundary for users.  It deliberately hides the in-memory store so it
- * can later be replaced with a database without changing controllers.
+ * Model boundary for users — hides the database layer from controllers.
+ * Same shape as before, but every method is now async (Postgres, not an
+ * in-memory array), so callers must `await` them.
  */
 export const UserModel = {
-  findById: (id) => db.users.find((user) => user._id === id),
-  findByEmail: (email) => db.users.find((user) => user.email.toLowerCase() === email.toLowerCase()),
-  updateProfile(user, changes) {
-    for (const key of ['name', 'mobileNumber', 'semester', 'avatar']) {
-      if (changes[key]) user[key] = changes[key];
-    }
-    user.updatedAt = new Date().toISOString();
-    return user;
-  }
+  findById: (id) => users.findById(id),
+
+  findByEmail: (email) => users.findByEmail(email),
+
+  updateProfile: (user, changes) => users.updateProfile(user._id, changes)
 };
