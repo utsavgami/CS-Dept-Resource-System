@@ -1,43 +1,91 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useProfileController } from '../controllers/useProfileController';
+import { api, setStoredUser } from '../lib/apiClient';
+import { Avatar } from './Avatar';
 import {
-  User as UserIcon,
-  Mail,
-  Phone,
-  GraduationCap,
-  FileText,
   Star,
   ShieldCheck,
   BookOpen,
   BookmarkCheck,
   Edit3,
   AlertTriangle,
-  Award,
-  Heart
+  Heart,
+  Upload,
+  Trash2,
+  Loader2,
+  CheckCircle2
 } from 'lucide-react';
 
-export const ProfilePage = ({
-  currentUser,
-  onUserUpdated,
-  setActiveTab
-}) => {
-  const { profileStats, loading, editing, setEditing, form, setForm, updating, saveProfile } =
-    useProfileController({ currentUser, onUserUpdated });
+const StatCard = ({ icon, value, tone }) => (
+  <div className="p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800">
+    <div className={`flex items-center justify-center space-x-1 font-black text-xl ${tone}`}>
+      {icon}
+      <span>{value}</span>
+    </div>
+  </div>
+);
+
+export const ProfilePage = ({ currentUser, onUserUpdated, setActiveTab }) => {
+  const {
+    profileStats, loading, editing, setEditing, form, setForm, updating, saveProfile,
+    uploadingImage, imageMessage, uploadProfileImage
+  } = useProfileController({ currentUser, onUserUpdated });
+
+  // Remove-photo is handled locally (direct API call) rather than through
+  // the controller, so it doesn't depend on that hook exposing it.
+  const [removingPhoto, setRemovingPhoto] = useState(false);
+  const [removeMessage, setRemoveMessage] = useState(null);
+
+  const handleRemovePhoto = async () => {
+    setRemoveMessage(null);
+    try {
+      setRemovingPhoto(true);
+      const res = await api.removeProfileImage();
+      setStoredUser(res.user);
+      onUserUpdated && onUserUpdated(res.user);
+      setForm((prev) => ({ ...prev, avatar: null }));
+      setRemoveMessage({ type: 'success', text: 'Profile photo removed' });
+    } catch (err) {
+      setRemoveMessage({ type: 'error', text: err.message || 'Could not remove photo' });
+    } finally {
+      setRemovingPhoto(false);
+    }
+  };
+
+  const photoBusy = uploadingImage || removingPhoto;
+  const photoMessage = removeMessage || imageMessage;
+
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto py-8 space-y-8 animate-pulse" aria-busy="true" aria-live="polite">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 space-y-6">
+          <div className="flex items-center gap-6">
+            <div className="w-24 h-24 rounded-full bg-slate-200 dark:bg-slate-800" />
+            <div className="space-y-2">
+              <div className="h-6 w-40 rounded bg-slate-200 dark:bg-slate-800" />
+              <div className="h-3 w-28 rounded bg-slate-200 dark:bg-slate-800" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-16 rounded-2xl bg-slate-100 dark:bg-slate-800/60" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto py-8 space-y-8 animate-in fade-in">
 
-      {/* Profile Card */}
-      <div className="profile-panel bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xl space-y-6">
+      {/* Identity */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xl space-y-6">
 
         <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-6">
 
           <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6 text-center sm:text-left">
-            <img
-              src={currentUser.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.name}`}
-              alt={currentUser.name}
-              className="w-24 h-24 rounded-full object-cover border-4 border-blue-500/20 shadow-md transition-transform duration-200 hover:scale-105"
-            />
+            <Avatar src={currentUser.avatar} name={currentUser.name} />
 
             <div className="space-y-1">
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
@@ -67,7 +115,7 @@ export const ProfilePage = ({
 
           <button
             onClick={() => setEditing(!editing)}
-            className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition flex items-center space-x-1.5 shrink-0"
+            className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition flex items-center space-x-1.5 shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
           >
             <Edit3 className="w-4 h-4" />
             <span>Edit Profile</span>
@@ -75,63 +123,46 @@ export const ProfilePage = ({
 
         </div>
 
-        {/* Stats Grid */}
+        {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800 text-center">
-
-          <div className="p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-            <div className="flex items-center justify-center space-x-1 text-amber-500 font-black text-xl">
-              <Star className="w-5 h-5 fill-amber-400" />
-              <span>{currentUser.averageRating || 5.0}</span>
-            </div>
-            <p className="text-[11px] text-slate-400 font-medium mt-0.5">Peer Rating</p>
+          <div>
+            <StatCard
+              icon={<Star className="w-5 h-5 fill-amber-400 text-amber-500" />}
+              value={currentUser.averageRating || 5.0}
+              tone="text-amber-500"
+            />
+            <p className="text-[11px] text-slate-400 font-medium mt-1.5">Peer Rating</p>
           </div>
 
-          <div className="p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-            <span className="font-black text-xl text-blue-600 dark:text-blue-400">
-              {profileStats.listingsCount}
-            </span>
-            <p className="text-[11px] text-slate-400 font-medium mt-0.5">Listed Resources</p>
+          <div>
+            <StatCard value={profileStats.listingsCount} icon={null} tone="text-blue-600 dark:text-blue-400" />
+            <p className="text-[11px] text-slate-400 font-medium mt-1.5">Listed Resources</p>
           </div>
 
-          <div className="p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-            <span className="font-black text-xl text-emerald-600 dark:text-emerald-400">
-              {profileStats.borrowedCount}
-            </span>
-            <p className="text-[11px] text-slate-400 font-medium mt-0.5">Items Borrowed</p>
+          <div>
+            <StatCard value={profileStats.borrowedCount} icon={null} tone="text-emerald-600 dark:text-emerald-400" />
+            <p className="text-[11px] text-slate-400 font-medium mt-1.5">Items Borrowed</p>
           </div>
 
-          {/* <button
-            type="button"
-            onClick={() => setActiveTab && setActiveTab('favorites')}
-            className="p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-red-300 dark:hover:border-red-800 hover:bg-red-50/50 dark:hover:bg-red-950/20 transition"
-          >
-            <div className="flex items-center justify-center space-x-1 text-red-500 font-black text-xl">
-              <Heart className="w-5 h-5 fill-red-400" />
-              <span>{profileStats.favoritesCount}</span>
-            </div>
-            <p className="text-[11px] text-slate-400 font-medium mt-0.5">FavoritesMy </p>
-          </button> */}
-
-          <div className="p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-            <span className={`font-black text-xl ${
-              currentUser.complaintCount > 0 ? 'text-amber-600' : 'text-slate-600 dark:text-slate-300'
-            }`}>
-              {currentUser.complaintCount} / 5
-            </span>
-            <p className="text-[11px] text-slate-400 font-medium mt-0.5">Complaints Received</p>
+          <div>
+            <StatCard
+              value={`${currentUser.complaintCount} / 5`}
+              icon={null}
+              tone={currentUser.complaintCount > 0 ? 'text-amber-600' : 'text-slate-600 dark:text-slate-300'}
+            />
+            <p className="text-[11px] text-slate-400 font-medium mt-1.5">Complaints Received</p>
           </div>
-
         </div>
 
-        {/* Quick Actions — moved here from the navbar to keep it uncluttered */}
+        {/* Quick Actions */}
         <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
-          <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-            Quick Actions
+          <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400">
+            Quick actions
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <button
               onClick={() => setActiveTab && setActiveTab('my-listings')}
-              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-800 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition flex flex-col items-center space-y-1.5 text-center"
+              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-800 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition flex flex-col items-center space-y-1.5 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
             >
               <BookOpen className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">My Listings</span>
@@ -139,7 +170,7 @@ export const ProfilePage = ({
 
             <button
               onClick={() => setActiveTab && setActiveTab('bookings')}
-              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-800 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition flex flex-col items-center space-y-1.5 text-center"
+              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-800 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition flex flex-col items-center space-y-1.5 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500"
             >
               <BookmarkCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">My Bookings</span>
@@ -147,7 +178,7 @@ export const ProfilePage = ({
 
             <button
               onClick={() => setActiveTab && setActiveTab('favorites')}
-              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-red-300 dark:hover:border-red-800 hover:bg-red-50/50 dark:hover:bg-red-950/20 transition flex flex-col items-center space-y-1.5 text-center"
+              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-red-300 dark:hover:border-red-800 hover:bg-red-50/50 dark:hover:bg-red-950/20 transition flex flex-col items-center space-y-1.5 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-500"
             >
               <Heart className="w-5 h-5 text-red-500" />
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Favorites</span>
@@ -155,7 +186,7 @@ export const ProfilePage = ({
 
             <button
               onClick={() => setActiveTab && setActiveTab('complaints')}
-              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-800 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition flex flex-col items-center space-y-1.5 text-center"
+              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-800 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition flex flex-col items-center space-y-1.5 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
             >
               <AlertTriangle className="w-5 h-5 text-amber-500" />
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Complaints</span>
@@ -165,12 +196,65 @@ export const ProfilePage = ({
 
       </div>
 
-      {/* Edit Form Modal */}
+      {/* Edit Form */}
       {editing && (
-        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-xl space-y-4">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-xl space-y-5">
           <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
             Update Profile Information
           </h3>
+
+          {/* Profile Photo — its own block, above the rest of the form,
+              since it's saved immediately (not part of the text-field submit). */}
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 p-4">
+            <div className="flex flex-wrap items-center gap-4">
+              <Avatar src={form.avatar} name={currentUser.name} size="w-16 h-16" textSize="text-lg" />
+
+              <div className="flex-1 min-w-[200px] space-y-2">
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Profile Photo</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-xs font-bold cursor-pointer transition ${photoBusy ? 'opacity-60 cursor-wait' : 'hover:bg-blue-100 dark:hover:bg-blue-900/50'}`}>
+                    {uploadingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    <span>{uploadingImage ? 'Uploading…' : form.avatar ? 'Change photo' : 'Upload photo'}</span>
+                    <input
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                      onChange={(event) => {
+                        uploadProfileImage(event.target.files?.[0]);
+                        event.target.value = '';
+                      }}
+                      disabled={photoBusy}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {form.avatar && (
+                    <button
+                      type="button"
+                      onClick={handleRemovePhoto}
+                      disabled={photoBusy}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-300 text-xs font-bold transition hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-60 disabled:cursor-wait focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-500"
+                    >
+                      {removingPhoto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      <span>{removingPhoto ? 'Removing…' : 'Remove photo'}</span>
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400">JPG, PNG or WEBP · max 5 MB. No photo shows your initials instead.</p>
+
+                {photoMessage && (
+                  <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
+                    photoMessage.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                      : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300'
+                  }`} role="status">
+                    {photoMessage.type === 'success' && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                    {photoMessage.type === 'error' && <AlertTriangle className="w-4 h-4 shrink-0" />}
+                    <span>{photoMessage.text}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
 
           <form onSubmit={saveProfile} className="space-y-4 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -180,7 +264,7 @@ export const ProfilePage = ({
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
                 />
               </div>
 
@@ -190,62 +274,50 @@ export const ProfilePage = ({
                   type="text"
                   value={form.mobileNumber}
                   onChange={(e) => setForm({ ...form, mobileNumber: e.target.value })}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Semester</label>
-                <select
-                  value={form.semester}
-                  onChange={(e) => setForm({ ...form, semester: e.target.value })}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
-                >
-                  <option value="1st Semester">1st Semester</option>
-                  <option value="2nd Semester">2nd Semester</option>
-                  <option value="3rd Semester">3rd Semester</option>
-                  <option value="4th Semester">4th Semester</option>
-                  <option value="5th Semester">5th Semester</option>
-                  <option value="6th Semester">6th Semester</option>
-                  <option value="7th Semester">7th Semester</option>
-                  <option value="8th Semester">8th Semester</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Profile Image</label>
-                <input
-                  type="text"
-                  value={form.avatar}
-                  onChange={(e) => setForm({ ...form, avatar: e.target.value })}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
-                />
-              </div>
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Semester</label>
+              <select
+                value={form.semester}
+                onChange={(e) => setForm({ ...form, semester: e.target.value })}
+                className="w-full sm:w-1/2 p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              >
+                <option value="1st Semester">1st Semester</option>
+                <option value="2nd Semester">2nd Semester</option>
+                <option value="3rd Semester">3rd Semester</option>
+                <option value="4th Semester">4th Semester</option>
+                <option value="5th Semester">5th Semester</option>
+                <option value="6th Semester">6th Semester</option>
+                <option value="7th Semester">7th Semester</option>
+                <option value="8th Semester">8th Semester</option>
+              </select>
             </div>
 
             <div className="flex justify-end space-x-2 pt-2">
               <button
                 type="button"
                 onClick={() => setEditing(false)}
-                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 font-bold"
+                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-slate-400"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={updating}
-                className="px-5 py-2 rounded-xl bg-blue-600 text-white font-bold"
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
               >
-                {updating ? 'Saving...' : 'Save Profile Changes'}
+                {updating ? 'Saving…' : 'Save Profile Changes'}
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Peer Reviews Received */}
+      {/* Peer Reviews */}
       <div className="space-y-4">
         <h3 className="font-extrabold text-lg text-slate-900 dark:text-white flex items-center space-x-2">
           <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
@@ -254,7 +326,7 @@ export const ProfilePage = ({
 
         {profileStats.ratings.length === 0 ? (
           <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
-            No peer ratings received yet. Complete rentals to earn ratings!
+            No peer ratings yet — completed rentals earn ratings here.
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

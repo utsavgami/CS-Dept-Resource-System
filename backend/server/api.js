@@ -113,7 +113,7 @@ apiRouter.post('/auth/register', async (req, res) => {
       mobileNumber: String(mobileNumber).trim(),
       department: department || 'Computer Science & Engineering',
       semester: semester || '1st Semester',
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`
+      avatar: null
     });
 
     const token = jwt.sign({ userId: newUser._id, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });

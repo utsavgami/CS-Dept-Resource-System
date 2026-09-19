@@ -55,6 +55,31 @@ async function fetchWithAuth(endpoint, options = {}) {
   return data;
 }
 
+// Same as fetchWithAuth, but for multipart/form-data uploads. The browser
+// must set its own Content-Type (with the multipart boundary), so we only
+// attach the Authorization header here.
+async function fetchWithAuthFile(endpoint, formData) {
+  const token = getAuthToken();
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'POST',
+    headers,
+    body: formData
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'API Request failed');
+  }
+
+  return data;
+}
+
 export const api = {
   // Auth
   register: (data) => fetchWithAuth('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
@@ -64,6 +89,15 @@ export const api = {
   // Users
   getUserProfile: (id) => fetchWithAuth(`/users/${id}`),
   updateProfile: (data) => fetchWithAuth('/users/profile', { method: 'PUT', body: JSON.stringify(data) }),
+  // Profile photo is uploaded as a real file (multipart) to /users/avatar,
+  // saved to disk on the server, and only the resulting URL is stored on
+  // the user record — not the image bytes.
+  uploadProfileImage: (file) => {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    return fetchWithAuthFile('/users/avatar', formData);
+  },
+  removeProfileImage: () => fetchWithAuth('/users/avatar', { method: 'DELETE' }),
 
   // Items
   getItems: (params = {}) => {

@@ -10,5 +10,7 @@ export const UserModel = {
 
   findByEmail: (email) => users.findByEmail(email),
 
-  updateProfile: (user, changes) => users.updateProfile(user._id, changes)
+  updateProfile: (user, changes) => users.updateProfile(user._id, changes),
+
+  removeAvatar: (user) => users.clearAvatar(user._id)
 };

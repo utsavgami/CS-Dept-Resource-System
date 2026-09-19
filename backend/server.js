@@ -82,6 +82,9 @@ async function startServer() {
     });
   });
 
+  // Serve uploaded profile photos
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
   // Mount API router FIRST
   app.use('/api', apiRouter);
 

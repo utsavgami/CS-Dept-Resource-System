@@ -98,6 +98,11 @@ export const users = {
   setBlocked: (id, isBlocked) =>
     queryOne('UPDATE users SET is_blocked = $2, updated_at = now() WHERE id = $1 RETURNING *', [id, isBlocked]),
 
+  // updateProfile's COALESCE can only set avatar to a new truthy value, never
+  // clear it back to null — this does the explicit clear for "remove photo".
+  clearAvatar: (id) =>
+    queryOne('UPDATE users SET avatar = NULL, updated_at = now() WHERE id = $1 RETURNING *', [id]),
+
   setComplaintCount: (id, count) =>
     queryOne('UPDATE users SET complaint_count = $2, updated_at = now() WHERE id = $1 RETURNING *', [id, count]),
 

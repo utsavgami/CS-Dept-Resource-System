@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api, setAuthToken, setStoredUser } from '../lib/apiClient';
-import { UserPlus, Mail, Lock, User as UserIcon, Phone, FileText, GraduationCap, Laptop, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Avatar } from './Avatar';
+import { UserPlus, Mail, Lock, User as UserIcon, Phone, FileText, Upload, Loader2, AlertTriangle } from 'lucide-react';
 
 export const RegisterPage = ({
   onSuccess,
@@ -15,6 +16,40 @@ export const RegisterPage = ({
   const [semester, setSemester] = useState('4th Semester');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const [avatarWarning, setAvatarWarning] = useState('');
+
+  // Build/revoke a local preview URL whenever a new photo is picked, so we
+  // don't leak object URLs across re-renders.
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(avatarFile);
+    setAvatarPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [avatarFile]);
+
+  const handleAvatarChange = (file) => {
+    setAvatarWarning('');
+    if (!file) {
+      setAvatarFile(null);
+      return;
+    }
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowed.includes(file.type)) {
+      setAvatarWarning('Please choose a JPG, PNG, WEBP, or GIF image.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarWarning('Image must be under 5 MB.');
+      return;
+    }
+    setAvatarFile(file);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -38,8 +73,22 @@ export const RegisterPage = ({
       });
 
       setAuthToken(res.token);
-      setStoredUser(res.user);
-      onSuccess(res.user);
+
+      let finalUser = res.user;
+      if (avatarFile) {
+        try {
+          const uploadRes = await api.uploadProfileImage(avatarFile);
+          finalUser = uploadRes.user;
+        } catch (uploadErr) {
+          // Don't block account creation over a photo upload hiccup —
+          // the account already exists and can add a photo later from
+          // the profile page.
+          setAvatarWarning('Account created, but the photo upload failed. You can add it later from your profile.');
+        }
+      }
+
+      setStoredUser(finalUser);
+      onSuccess(finalUser);
     } catch (err) {
       setError(err.message || 'Registration failed');
     } finally {
@@ -71,6 +120,30 @@ export const RegisterPage = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* Profile Photo (optional) */}
+          <div className="flex items-center gap-4 p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
+            <Avatar src={avatarPreview} name={name} size="w-14 h-14" textSize="text-base" />
+            <div className="flex-1">
+              <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-xs font-bold cursor-pointer transition hover:bg-blue-100 dark:hover:bg-blue-900/50`}>
+                <Upload className="w-3.5 h-3.5" />
+                <span>{avatarFile ? 'Change photo' : 'Add profile photo'}</span>
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif"
+                  onChange={(event) => handleAvatarChange(event.target.files?.[0] || null)}
+                  className="hidden"
+                />
+              </label>
+              <p className="mt-1 text-[10px] text-slate-400">Optional — JPG, PNG, WEBP or GIF · max 5 MB</p>
+              {avatarWarning && (
+                <p className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  <span>{avatarWarning}</span>
+                </p>
+              )}
+            </div>
+          </div>
 
           {/* Full Name */}
           <div>
@@ -193,7 +266,12 @@ export const RegisterPage = ({
             disabled={loading}
             className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-600/30 transition flex items-center justify-center space-x-2 disabled:opacity-50 mt-2"
           >
-            {loading ? <span>Creating Account...</span> : (
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Creating account…</span>
+              </>
+            ) : (
               <>
                 <UserPlus className="w-4 h-4" />
                 <span>Register CS Student Account</span>
@@ -212,14 +290,6 @@ export const RegisterPage = ({
               Sign In
             </button>
           </p>
-
-          {/* <button
-            onClick={onOpenDemoModal}
-            className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition flex items-center justify-center space-x-1.5"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <span>Or Use Instant Demo Login Switcher</span>
-          </button> */}
         </div>
 
       </div>
