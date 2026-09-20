@@ -6,7 +6,7 @@ import { UserPlus, Mail, Lock, User as UserIcon, Phone, FileText, Upload, Loader
 export const RegisterPage = ({
   onSuccess,
   onSwitchToLogin,
-  onOpenDemoModal
+  
 }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');

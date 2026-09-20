@@ -115,7 +115,7 @@ export const ProfilePage = ({ currentUser, onUserUpdated, setActiveTab }) => {
 
           <button
             onClick={() => setEditing(!editing)}
-            className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition flex items-center space-x-1.5 shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+            className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition flex items-center space-x-1.5 shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 cursor-pointer"
           >
             <Edit3 className="w-4 h-4" />
             <span>Edit Profile</span>
@@ -232,7 +232,7 @@ export const ProfilePage = ({ currentUser, onUserUpdated, setActiveTab }) => {
                       type="button"
                       onClick={handleRemovePhoto}
                       disabled={photoBusy}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-300 text-xs font-bold transition hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-60 disabled:cursor-wait focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-500"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-300 text-xs font-bold transition hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-60 disabled:cursor-wait focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-500 cursor-pointer"
                     >
                       {removingPhoto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                       <span>{removingPhoto ? 'Removing…' : 'Remove photo'}</span>
@@ -264,7 +264,7 @@ export const ProfilePage = ({ currentUser, onUserUpdated, setActiveTab }) => {
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 cursor-pointer"
                 />
               </div>
 
@@ -274,7 +274,7 @@ export const ProfilePage = ({ currentUser, onUserUpdated, setActiveTab }) => {
                   type="text"
                   value={form.mobileNumber}
                   onChange={(e) => setForm({ ...form, mobileNumber: e.target.value })}
-                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 cursor-pointer"
                 />
               </div>
             </div>
@@ -284,7 +284,7 @@ export const ProfilePage = ({ currentUser, onUserUpdated, setActiveTab }) => {
               <select
                 value={form.semester}
                 onChange={(e) => setForm({ ...form, semester: e.target.value })}
-                className="w-full sm:w-1/2 p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                className="w-full sm:w-1/2 p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 cursor-pointer"
               >
                 <option value="1st Semester">1st Semester</option>
                 <option value="2nd Semester">2nd Semester</option>
@@ -301,14 +301,14 @@ export const ProfilePage = ({ currentUser, onUserUpdated, setActiveTab }) => {
               <button
                 type="button"
                 onClick={() => setEditing(false)}
-                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-slate-400"
+                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-slate-400 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={updating}
-                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 cursor-pointer"
               >
                 {updating ? 'Saving…' : 'Save Profile Changes'}
               </button>
