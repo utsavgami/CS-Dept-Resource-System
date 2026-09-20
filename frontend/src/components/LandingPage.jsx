@@ -125,7 +125,7 @@ export const LandingPage = ({
               className="px-3 py-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 rounded-lg font-bold flex items-center space-x-1.5 transition"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Switch Demo Accounts (Student / Admin)</span>
+              <span>Switch Demo Accounts (Student)</span>
             </button>
           </div>
 

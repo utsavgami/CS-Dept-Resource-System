@@ -287,7 +287,7 @@ export default function App() {
                 onClick={() => setShowDemoModal(true)}
                 className="px-4 py-2 bg-purple-600 text-white rounded-xl font-bold text-xs"
               >
-                Switch to Admin Demo Account (Dr. Alan Turing)
+                Switch to Admin Demo Account (CS Department Admin)
               </button>
             </div>
           )
