@@ -117,7 +117,7 @@ export const LandingPage = ({
           </form>
 
           {/* Quick Demo Switcher CTA */}
-          <div className="pt-4 flex flex-wrap items-center gap-3 text-xs text-slate-300">
+          {/* <div className="pt-4 flex flex-wrap items-center gap-3 text-xs text-slate-300">
             <span>Want to test immediately?</span>
             <button
               type="button"
@@ -127,7 +127,7 @@ export const LandingPage = ({
               <Sparkles className="w-3.5 h-3.5" />
               <span>Switch Demo Accounts (Student)</span>
             </button>
-          </div>
+          </div> */}
 
         </div>
       </div>

@@ -1,7 +1,15 @@
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 
-const { Pool } = pg;
+const { Pool, types } = pg;
+
+// Postgres NUMERIC columns (rent_price_per_day, security_deposit, total_cost,
+// average_rating, etc.) come back from node-postgres as STRINGS by default —
+// this avoids precision loss for huge numbers, but it silently breaks normal
+// arithmetic ("60" + "40" === "6040" via string concatenation instead of
+// addition). None of our amounts need arbitrary precision, so parse NUMERIC
+// (OID 1700) as a real float for every query in this app.
+types.setTypeParser(1700, (value) => (value === null ? null : parseFloat(value)));
 
 // ----------------------------------------------------
 // Connection
@@ -69,14 +77,14 @@ export const users = {
   findByEnrollment: (enrollmentNumber) =>
     queryOne('SELECT * FROM users WHERE lower(enrollment_number) = lower($1)', [enrollmentNumber]),
 
-  create: ({ name, email, passwordHash, enrollmentNumber, mobileNumber, department, semester, avatar }) => {
-    const id = genId('usr_std');
+  create: ({ name, email, passwordHash, enrollmentNumber, mobileNumber, department, semester, avatar, role = 'student' }) => {
+    const id = genId(role === 'admin' ? 'usr_admin' : 'usr_std');
     return queryOne(
       `INSERT INTO users
          (id, name, email, password_hash, enrollment_number, mobile_number, department, semester, role, avatar)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'student',$9)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        RETURNING *`,
-      [id, name, email, passwordHash, enrollmentNumber, mobileNumber, department, semester, avatar]
+      [id, name, email, passwordHash, enrollmentNumber, mobileNumber, department, semester, role, avatar]
     );
   },
 
@@ -116,7 +124,9 @@ export const users = {
 
   countStudents: async () => (await queryOne(`SELECT COUNT(*)::int AS count FROM users WHERE role = 'student'`)).count,
 
-  countBlocked: async () => (await queryOne('SELECT COUNT(*)::int AS count FROM users WHERE is_blocked = true')).count
+  countBlocked: async () => (await queryOne('SELECT COUNT(*)::int AS count FROM users WHERE is_blocked = true')).count,
+
+  findAdmins: () => queryRows(`SELECT * FROM users WHERE role = 'admin'`)
 };
 
 // ----------------------------------------------------
@@ -357,7 +367,73 @@ export const messages = {
     pool.query('UPDATE messages SET is_read = true WHERE booking_id = $1 AND receiver_id = $2 AND is_read = false', [
       bookingId,
       userId
-    ])
+    ]),
+
+  // ---- Direct messages (student <-> admin, not tied to any booking) ----
+  // booking_id has no NOT NULL constraint, so a direct thread is simply the
+  // set of messages between two users where booking_id IS NULL.
+  findDirectThread: (userA, userB) =>
+    queryRows(
+      `${MESSAGE_SELECT} WHERE m.booking_id IS NULL
+         AND ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1))
+       ORDER BY m.timestamp`,
+      [userA, userB]
+    ),
+
+  createDirect: async ({ senderId, receiverId, content }) => {
+    const id = genId('msg');
+    await pool.query(
+      `INSERT INTO messages (id, booking_id, sender_id, receiver_id, content, is_read)
+       VALUES ($1,NULL,$2,$3,$4,false)`,
+      [id, senderId, receiverId, content]
+    );
+    const rows = await queryRows(`${MESSAGE_SELECT} WHERE m.id = $1`, [id]);
+    return rows[0];
+  },
+
+  markDirectReadForReceiver: (otherUserId, userId) =>
+    pool.query(
+      `UPDATE messages SET is_read = true
+       WHERE booking_id IS NULL AND sender_id = $1 AND receiver_id = $2 AND is_read = false`,
+      [otherUserId, userId]
+    ),
+
+  // Groups an admin's direct messages by the other party, newest first,
+  // for an inbox-style list (one row per student who has messaged in).
+  findAdminInboxThreads: async (adminId) => {
+    const rows = await queryRows(
+      `SELECT m.*, s.name AS sender_name, s.avatar AS sender_avatar,
+              r.name AS receiver_name, r.avatar AS receiver_avatar
+       FROM messages m
+       JOIN users s ON s.id = m.sender_id
+       JOIN users r ON r.id = m.receiver_id
+       WHERE m.booking_id IS NULL AND (m.sender_id = $1 OR m.receiver_id = $1)
+       ORDER BY m.timestamp DESC`,
+      [adminId]
+    );
+
+    const byOther = new Map();
+    for (const row of rows) {
+      const isFromAdmin = row.senderId === adminId;
+      const otherId = isFromAdmin ? row.receiverId : row.senderId;
+      const otherName = isFromAdmin ? row.receiverName : row.senderName;
+      const otherAvatar = isFromAdmin ? row.receiverAvatar : row.senderAvatar;
+
+      if (!byOther.has(otherId)) {
+        byOther.set(otherId, {
+          otherId,
+          otherName,
+          otherAvatar,
+          lastMessage: row,
+          unreadCount: 0
+        });
+      }
+      if (row.receiverId === adminId && !row.isRead) {
+        byOther.get(otherId).unreadCount += 1;
+      }
+    }
+    return Array.from(byOther.values());
+  }
 };
 
 // ----------------------------------------------------

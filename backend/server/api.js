@@ -14,6 +14,7 @@ import {
   checkAndApplyAutoBlock
 } from './db.js';
 import { createUserRouter } from './routes/userRoutes.js';
+import { proofUpload } from './middleware/upload.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cs_department_jwt_secret_key_2026';
 
@@ -83,13 +84,13 @@ apiRouter.post('/auth/register', async (req, res) => {
     }
 
     // ONLY COLLEGE CS GMAIL ALLOWED
-    // Format: 0801CSYYRRRR@sgsits.ac.in
+    // Format: 0801CSYYRRRR@gmail.com
     const emailValue = String(email).trim().toLowerCase();
-    const collegeEmailRegex = /^0801cs\d{2}\d{4}@sgsits\.ac\.in$/i;
+    const collegeEmailRegex = /^0801cs\d{2}\d{4}@gmail\.com$/i;
 
     if (!collegeEmailRegex.test(emailValue)) {
       return res.status(400).json({
-        error: 'Please use your college CS email. Format: 0801CSYYRRRR@sgsits.ac.in'
+        error: 'Please use your college CS email. Format: 0801CSYYRRRR@gmail.com'
       });
     }
 
@@ -632,6 +633,7 @@ apiRouter.get('/chat/conversations', authenticateToken, async (req, res) => {
 
         return {
           booking,
+          isDirect: false,
           participant: {
             _id: otherUserId,
             name: otherUser?.name || (booking.ownerId === userId ? booking.borrowerName : booking.ownerName),
@@ -644,7 +646,41 @@ apiRouter.get('/chat/conversations', authenticateToken, async (req, res) => {
       })
     );
 
-    conversations.sort((a, b) => new Date(b.lastActivityAt) - new Date(a.lastActivityAt));
+    // Direct (non-booking) threads: every student always sees a thread with
+    // the CS Admin (even before the first message); an admin sees one entry
+    // per student who has messaged in.
+    if (req.user.role === 'admin') {
+      const threads = await messages.findAdminInboxThreads(userId);
+      for (const t of threads) {
+        conversations.push({
+          booking: null,
+          isDirect: true,
+          participant: { _id: t.otherId, name: t.otherName, avatar: t.otherAvatar },
+          lastMessage: t.lastMessage,
+          unreadCount: t.unreadCount,
+          lastActivityAt: t.lastMessage.timestamp
+        });
+      }
+    } else {
+      const admins = await users.findAdmins();
+      if (admins.length) {
+        const admin = admins[0];
+        const thread = await messages.findDirectThread(userId, admin._id);
+        const last = thread[thread.length - 1] || null;
+        const unreadCount = thread.filter((m) => m.receiverId === userId && !m.isRead).length;
+
+        conversations.push({
+          booking: null,
+          isDirect: true,
+          participant: { _id: admin._id, name: admin.name, avatar: admin.avatar },
+          lastMessage: last,
+          unreadCount,
+          lastActivityAt: last?.timestamp || null
+        });
+      }
+    }
+
+    conversations.sort((a, b) => new Date(b.lastActivityAt || 0) - new Date(a.lastActivityAt || 0));
 
     return res.json({ conversations });
   } catch (err) {
@@ -719,6 +755,14 @@ apiRouter.post('/chat/messages', authenticateToken, async (req, res) => {
     const receiverId = booking.borrowerId === sender._id ? booking.ownerId : booking.borrowerId;
     const newMsg = await messages.create({ bookingId, senderId: sender._id, receiverId, content });
 
+    await notifications.create({
+      userId: receiverId,
+      title: `New message from ${sender.name}`,
+      message: content.length > 60 ? `${content.slice(0, 60)}...` : content,
+      type: 'chat',
+      link: `/messages?booking=${bookingId}`
+    });
+
     return res.status(201).json({ message: newMsg });
   } catch (err) {
     console.error('send message error:', err);
@@ -727,8 +771,108 @@ apiRouter.post('/chat/messages', authenticateToken, async (req, res) => {
 });
 
 // ----------------------------------------------------
+// DIRECT MESSAGES (student <-> admin, not tied to a booking)
+// ----------------------------------------------------
+
+// GET /api/messages/direct/admin-contact — who to message ("Message Admin" button)
+apiRouter.get('/messages/direct/admin-contact', authenticateToken, async (req, res) => {
+  try {
+    const admins = await users.findAdmins();
+    if (!admins.length) {
+      return res.status(404).json({ error: 'No admin account is configured' });
+    }
+    const admin = admins[0];
+    return res.json({ admin: { _id: admin._id, name: admin.name, avatar: admin.avatar } });
+  } catch (err) {
+    console.error('admin-contact error:', err);
+    return res.status(500).json({ error: 'Could not load admin contact' });
+  }
+});
+
+// GET /api/messages/direct — admin's inbox: one row per student thread (admin only)
+apiRouter.get('/messages/direct', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const threads = await messages.findAdminInboxThreads(req.user._id);
+    return res.json({ threads });
+  } catch (err) {
+    console.error('admin inbox error:', err);
+    return res.status(500).json({ error: 'Could not load messages' });
+  }
+});
+
+// POST /api/messages/direct — send a direct message. Students may only
+// message an admin; admins may reply to anyone.
+apiRouter.post('/messages/direct', authenticateToken, async (req, res) => {
+  try {
+    const sender = req.user;
+    const { receiverId, content } = req.body;
+
+    if (!receiverId || !content) {
+      return res.status(400).json({ error: 'Recipient and message content are required' });
+    }
+
+    if (sender.role !== 'admin') {
+      const receiver = await users.findById(receiverId);
+      if (!receiver || receiver.role !== 'admin') {
+        return res.status(403).json({ error: 'You can only message the CS Admin directly' });
+      }
+    }
+
+    const newMsg = await messages.createDirect({ senderId: sender._id, receiverId, content });
+
+    await notifications.create({
+      userId: receiverId,
+      title: `New message from ${sender.name}`,
+      message: content.length > 60 ? `${content.slice(0, 60)}...` : content,
+      type: 'chat',
+      link: sender.role === 'admin' ? `/messages?direct=${sender._id}` : '/admin'
+    });
+
+    return res.status(201).json({ message: newMsg });
+  } catch (err) {
+    console.error('send direct message error:', err);
+    return res.status(500).json({ error: 'Could not send message' });
+  }
+});
+
+// GET /api/messages/direct/:userId — the thread between me and :userId.
+// A student can only open a thread with an admin; an admin can open a
+// thread with any student.
+apiRouter.get('/messages/direct/:userId', authenticateToken, async (req, res) => {
+  try {
+    const me = req.user;
+    const otherId = req.params.userId;
+
+    if (me.role !== 'admin') {
+      const other = await users.findById(otherId);
+      if (!other || other.role !== 'admin') {
+        return res.status(403).json({ error: 'Direct messaging is only available with the CS Admin' });
+      }
+    }
+
+    const thread = await messages.findDirectThread(me._id, otherId);
+    await messages.markDirectReadForReceiver(otherId, me._id);
+
+    return res.json({ messages: thread });
+  } catch (err) {
+    console.error('direct thread error:', err);
+    return res.status(500).json({ error: 'Could not load messages' });
+  }
+});
+
+// ----------------------------------------------------
 // COMPLAINT & AUTO-BLOCK APIs
 // ----------------------------------------------------
+
+// POST /api/complaints/proof — uploads a proof image/PDF to disk and
+// returns its URL, to be included as proofUrl in the POST /complaints call
+// right after. Keeps the actual file out of the request body/DB.
+apiRouter.post('/complaints/proof', authenticateToken, proofUpload.single('proof'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file received' });
+  }
+  return res.json({ url: `/uploads/complaint-proofs/${req.file.filename}` });
+});
 
 // POST /api/complaints
 apiRouter.post('/complaints', authenticateToken, async (req, res) => {
@@ -757,6 +901,19 @@ apiRouter.post('/complaints', authenticateToken, async (req, res) => {
     });
 
     await checkAndApplyAutoBlock(reportedUser._id);
+
+    const admins = await users.findAdmins();
+    await Promise.all(
+      admins.map((admin) =>
+        notifications.create({
+          userId: admin._id,
+          title: 'New Complaint Filed',
+          message: `${reporter.name} reported ${reportedUser.name} for "${type}".`,
+          type: 'complaint',
+          link: '/admin'
+        })
+      )
+    );
 
     return res.status(201).json({
       message: 'Complaint filed successfully. Admin will review the proof and take action.',
@@ -907,6 +1064,16 @@ apiRouter.put('/admin/complaints/:id', authenticateToken, requireAdmin, async (r
 
     const { status, adminNote } = req.body;
     const updated = await complaints.update(req.params.id, { status, adminNote });
+
+    if (status && status !== complaint.status) {
+      await notifications.create({
+        userId: complaint.reporterId,
+        title: 'Complaint Status Updated',
+        message: `Your complaint against ${complaint.reportedUserName} is now: ${status}.`,
+        type: 'complaint',
+        link: '/complaints'
+      });
+    }
 
     if (status === 'Resolved') {
       const isNowBlocked = await checkAndApplyAutoBlock(complaint.reportedUserId);

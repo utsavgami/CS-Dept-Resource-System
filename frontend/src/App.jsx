@@ -18,7 +18,6 @@ import { AdminDashboardPage } from './components/AdminDashboardPage';
 import { DocsPage } from './components/DocsPage';
 import { LoginPage } from './components/LoginPage';
 import { RegisterPage } from './components/RegisterPage';
-import { QuickDemoLoginModal } from './components/QuickDemoLoginModal';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getStoredUser());
@@ -28,7 +27,6 @@ export default function App() {
   const [chatBookingId, setChatBookingId] = useState(undefined);
   const [complaintBooking, setComplaintBooking] = useState(null);
 
-  const [showDemoModal, setShowDemoModal] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('cs_sharing_theme') === 'dark';
   });
@@ -104,7 +102,6 @@ export default function App() {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onLogout={handleLogout}
-        onOpenDemoModal={() => setShowDemoModal(true)}
         darkMode={darkMode}
         setDarkMode={setDarkMode}
       />
@@ -118,7 +115,7 @@ export default function App() {
             user={currentUser}
             setActiveTab={setActiveTab}
             onSelectItem={handleSelectItem}
-            onOpenDemoModal={() => setShowDemoModal(true)}
+            onOpenDemoModal={() => {}}
           />
         )}
 
@@ -168,7 +165,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
-              onOpenDemoModal={() => setShowDemoModal(true)}
+              onOpenDemoModal={() => {}}
             />
           )
         )}
@@ -192,7 +189,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
-              onOpenDemoModal={() => setShowDemoModal(true)}
+              onOpenDemoModal={() => {}}
             />
           )
         )}
@@ -209,7 +206,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
-              onOpenDemoModal={() => setShowDemoModal(true)}
+              onOpenDemoModal={() => {}}
             />
           )
         )}
@@ -225,7 +222,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
-              onOpenDemoModal={() => setShowDemoModal(true)}
+              onOpenDemoModal={() => {}}
             />
           )
         )}
@@ -241,7 +238,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
-              onOpenDemoModal={() => setShowDemoModal(true)}
+              onOpenDemoModal={() => {}}
             />
           )
         )}
@@ -258,7 +255,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
-              onOpenDemoModal={() => setShowDemoModal(true)}
+              onOpenDemoModal={() => {}}
             />
           )
         )}
@@ -271,7 +268,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
-              onOpenDemoModal={() => setShowDemoModal(true)}
+              onOpenDemoModal={() => {}}
             />
           )
         )}
@@ -283,12 +280,6 @@ export default function App() {
           ) : (
             <div className="py-20 text-center space-y-3">
               <p className="text-sm font-bold text-red-600">Admin authorization required to access this panel.</p>
-              <button
-                onClick={() => setShowDemoModal(true)}
-                className="px-4 py-2 bg-purple-600 text-white rounded-xl font-bold text-xs"
-              >
-                Switch to Admin Demo Account (CS Department Admin)
-              </button>
             </div>
           )
         )}
@@ -303,7 +294,7 @@ export default function App() {
           <LoginPage
             onSuccess={handleLoginSuccess}
             onSwitchToRegister={() => setActiveTab('register')}
-            onOpenDemoModal={() => setShowDemoModal(true)}
+            onOpenDemoModal={() => {}}
           />
         )}
 
@@ -312,7 +303,7 @@ export default function App() {
           <RegisterPage
             onSuccess={handleLoginSuccess}
             onSwitchToLogin={() => setActiveTab('login')}
-            onOpenDemoModal={() => setShowDemoModal(true)}
+            onOpenDemoModal={() => {}}
           />
         )}
 
@@ -320,13 +311,6 @@ export default function App() {
 
       {/* Footer */}
       <Footer setActiveTab={setActiveTab} />
-
-      {/* Demo Login Switcher Modal */}
-      <QuickDemoLoginModal
-        isOpen={showDemoModal}
-        onClose={() => setShowDemoModal(false)}
-        onLoginSuccess={handleLoginSuccess}
-      />
 
     </div>
   );

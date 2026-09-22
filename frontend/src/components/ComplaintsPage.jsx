@@ -4,12 +4,9 @@ import {
   AlertTriangle,
   ShieldAlert,
   Upload,
-  Clock,
+  Loader2,
   CheckCircle2,
-  FileText,
-  PlusCircle,
-  Image as ImageIcon,
-  Lock
+  PlusCircle
 } from 'lucide-react';
 
 export const ComplaintsPage = ({
@@ -27,13 +24,12 @@ export const ComplaintsPage = ({
   const [type, setType] = useState('Demanding More Money');
   const [reportedUserId, setReportedUserId] = useState(initialBooking ? (initialBooking.ownerId === currentUser._id ? initialBooking.borrowerId : initialBooking.ownerId) : '');
   const [description, setDescription] = useState('');
-  const [proofUrl, setProofUrl] = useState('https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&q=80&w=800');
+  const [proofUrl, setProofUrl] = useState('');
+  const [uploadingProof, setUploadingProof] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-
-  // Sample CS students for dropdown
-  const [students, setStudents] = useState([]);
 
   useEffect(() => {
     loadComplaints();
@@ -78,12 +74,13 @@ export const ComplaintsPage = ({
         itemTitle: initialBooking?.itemTitle,
         type,
         description,
-        proofUrl
+        proofUrl: proofUrl || undefined
       });
 
       setSuccessMsg(res.message);
       setShowForm(false);
       setDescription('');
+      setProofUrl('');
       loadComplaints();
     } catch (err) {
       setError(err.message || 'Failed to submit complaint');
@@ -92,16 +89,22 @@ export const ComplaintsPage = ({
     }
   };
 
-  const handleFileUpload = (e) => {
+  // Uploads the chosen file to the server (disk storage) and stores the
+  // returned URL — the file itself never goes in the request body/DB.
+  const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === 'string') {
-          setProofUrl(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
+    e.target.value = '';
+    if (!file) return;
+
+    setUploadError('');
+    try {
+      setUploadingProof(true);
+      const res = await api.uploadComplaintProof(file);
+      setProofUrl(res.url);
+    } catch (err) {
+      setUploadError(err.message || 'Could not upload file');
+    } finally {
+      setUploadingProof(false);
     }
   };
 
@@ -224,19 +227,31 @@ export const ComplaintsPage = ({
                 Upload Proof (Photo / Screenshot / PDF)
               </label>
               <div className="flex flex-col sm:flex-row items-center gap-3">
-                <input
-                  type="text"
-                  value={proofUrl}
-                  onChange={(e) => setProofUrl(e.target.value)}
-                  placeholder="Image URL or upload file below..."
-                  className="flex-1 w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs"
-                />
-                <label className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-xs cursor-pointer hover:bg-slate-200 flex items-center justify-center space-x-1 shrink-0">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Choose File</span>
-                  <input type="file" accept="image/*,.pdf" onChange={handleFileUpload} className="hidden" />
+                {proofUrl && (
+                  <img
+                    src={proofUrl}
+                    alt="Proof preview"
+                    className="w-14 h-14 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                  />
+                )}
+                <label className={`w-full sm:w-auto px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer flex items-center justify-center space-x-1.5 shrink-0 transition ${uploadingProof ? 'opacity-60 cursor-wait bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                  {uploadingProof ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                  <span>{uploadingProof ? 'Uploading…' : proofUrl ? 'Change file' : 'Choose File'}</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={handleFileUpload}
+                    disabled={uploadingProof}
+                    className="hidden"
+                  />
                 </label>
+                <span className="text-[10px] text-slate-400">
+                  {proofUrl ? 'File attached' : 'Optional — max 5 MB'}
+                </span>
               </div>
+              {uploadError && (
+                <p className="mt-1.5 text-[10px] font-semibold text-red-600 dark:text-red-400">{uploadError}</p>
+              )}
             </div>
 
             <div className="pt-3 flex justify-end space-x-2">
@@ -249,8 +264,8 @@ export const ComplaintsPage = ({
               </button>
               <button
                 type="submit"
-                disabled={submitting}
-                className="px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md transition"
+                disabled={submitting || uploadingProof}
+                className="px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md transition disabled:opacity-60"
               >
                 {submitting ? 'Submitting Report...' : 'Submit Complaint to Admin'}
               </button>
@@ -308,11 +323,13 @@ export const ComplaintsPage = ({
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                       Submitted Proof:
                     </span>
-                    <img
-                      src={c.proofUrl}
-                      alt="Proof"
-                      className="w-32 h-20 rounded-xl object-cover border border-slate-200 dark:border-slate-800"
-                    />
+                    <a href={c.proofUrl} target="_blank" rel="noreferrer">
+                      <img
+                        src={c.proofUrl}
+                        alt="Proof"
+                        className="w-32 h-20 rounded-xl object-cover border border-slate-200 dark:border-slate-800 hover:opacity-80 transition"
+                      />
+                    </a>
                   </div>
                 )}
 

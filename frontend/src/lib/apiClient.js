@@ -124,9 +124,21 @@ export const api = {
   sendMessage: (data) =>
     fetchWithAuth('/chat/messages', { method: 'POST', body: JSON.stringify(data) }),
 
+  // Direct messages (student <-> admin, no booking involved)
+  getAdminContact: () => fetchWithAuth('/messages/direct/admin-contact'),
+  getAdminInbox: () => fetchWithAuth('/messages/direct'),
+  getDirectThread: (userId) => fetchWithAuth(`/messages/direct/${userId}`),
+  sendDirectMessage: (data) =>
+    fetchWithAuth('/messages/direct', { method: 'POST', body: JSON.stringify(data) }),
+
   // Complaints
   createComplaint: (data) => fetchWithAuth('/complaints', { method: 'POST', body: JSON.stringify(data) }),
   getMyComplaints: () => fetchWithAuth('/complaints/my'),
+  uploadComplaintProof: (file) => {
+    const formData = new FormData();
+    formData.append('proof', file);
+    return fetchWithAuthFile('/complaints/proof', formData);
+  },
 
   // Ratings
   createRating: (data) =>

@@ -312,7 +312,7 @@ export const AdminDashboardPage = () => {
                   <h4 className="font-bold text-slate-900 dark:text-white line-clamp-1">{item.title}</h4>
                   <button
                     onClick={() => handleDeleteListing(item._id)}
-                    className="p-1 bg-red-100 text-red-600 rounded-lg hover:bg-red-200"
+                    className="p-1 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 cursor-pointer"
                     title="Delete Fake / Violating Listing"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -320,7 +320,7 @@ export const AdminDashboardPage = () => {
                 </div>
                 <p className="text-slate-500 line-clamp-2">{item.description}</p>
                 <div className="flex justify-between font-bold text-blue-600 pt-1">
-                  <span>${item.rentPricePerDay}/day</span>
+                  <span>₹{item.rentPricePerDay}/day</span>
                   <span className="text-slate-400 font-normal">Owner: {item.ownerName}</span>
                 </div>
               </div>
