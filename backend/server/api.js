@@ -825,7 +825,7 @@ apiRouter.post('/messages/direct', authenticateToken, async (req, res) => {
       title: `New message from ${sender.name}`,
       message: content.length > 60 ? `${content.slice(0, 60)}...` : content,
       type: 'chat',
-      link: sender.role === 'admin' ? `/messages?direct=${sender._id}` : '/admin'
+      link: `/messages?direct=${sender._id}`
     });
 
     return res.status(201).json({ message: newMsg });
