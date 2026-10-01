@@ -11,12 +11,18 @@ import {
   complaints,
   ratings,
   notifications,
-  checkAndApplyAutoBlock
+  checkAndApplyAutoBlock,
+  emailOtps
 } from './db.js';
+import multer from 'multer';
 import { createUserRouter } from './routes/userRoutes.js';
 import { proofUpload } from './middleware/upload.js';
+import { sendOtpEmail } from './mailer.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cs_department_jwt_secret_key_2026';
+
+// Format: 0801CSYYRRRR@gmail.com — shared by send-otp, verify-otp and register.
+const COLLEGE_EMAIL_REGEX = /^0801cs\d{2}\d{4}@gmail\.com$/i;
 
 export const apiRouter = express.Router();
 apiRouter.use(express.json());
@@ -66,7 +72,73 @@ export function requireAdmin(req, res, next) {
 // AUTHENTICATION APIs
 // ----------------------------------------------------
 
-// POST /api/auth/register
+// POST /api/auth/send-otp — step 1 of registration: email a 6-digit code.
+apiRouter.post('/auth/send-otp', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const emailValue = String(email).trim().toLowerCase();
+    if (!COLLEGE_EMAIL_REGEX.test(emailValue)) {
+      return res.status(400).json({
+        error: 'Please use your college CS email. Format: 0801CSYYRRRR@gmail.com'
+      });
+    }
+
+    const existingEmail = await users.findByEmail(emailValue);
+    if (existingEmail) {
+      return res.status(400).json({ error: 'An account with this email already exists' });
+    }
+
+    const otpCode = String(Math.floor(100000 + Math.random() * 900000));
+    await emailOtps.create(emailValue, otpCode, 10);
+
+    try {
+      await sendOtpEmail(emailValue, otpCode);
+    } catch (mailErr) {
+      console.error('send otp email error:', mailErr);
+      return res.status(500).json({ error: 'Could not send verification email. Please try again in a moment.' });
+    }
+
+    return res.json({ message: 'A 6-digit code has been sent to your email. It is valid for 10 minutes.' });
+  } catch (err) {
+    console.error('send-otp error:', err);
+    return res.status(500).json({ error: 'Could not send OTP' });
+  }
+});
+
+// POST /api/auth/verify-otp — step 2 of registration: check the code.
+apiRouter.post('/auth/verify-otp', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res.status(400).json({ error: 'Email and OTP are required' });
+    }
+
+    const emailValue = String(email).trim().toLowerCase();
+    const record = await emailOtps.findLatestByEmail(emailValue);
+
+    if (!record) {
+      return res.status(400).json({ error: 'No OTP found for this email. Please request a new one.' });
+    }
+    if (new Date(record.expiresAt) < new Date()) {
+      return res.status(400).json({ error: 'This OTP has expired. Please request a new one.' });
+    }
+    if (String(record.otpCode) !== String(otp).trim()) {
+      return res.status(400).json({ error: 'Incorrect OTP. Please check and try again.' });
+    }
+
+    await emailOtps.markVerified(emailValue);
+    return res.json({ message: 'Email verified successfully.' });
+  } catch (err) {
+    console.error('verify-otp error:', err);
+    return res.status(500).json({ error: 'Could not verify OTP' });
+  }
+});
+
+// POST /api/auth/register — step 3: requires a verified OTP for this email.
 apiRouter.post('/auth/register', async (req, res) => {
   try {
     const {
@@ -86,12 +158,18 @@ apiRouter.post('/auth/register', async (req, res) => {
     // ONLY COLLEGE CS GMAIL ALLOWED
     // Format: 0801CSYYRRRR@gmail.com
     const emailValue = String(email).trim().toLowerCase();
-    const collegeEmailRegex = /^0801cs\d{2}\d{4}@gmail\.com$/i;
 
-    if (!collegeEmailRegex.test(emailValue)) {
+    if (!COLLEGE_EMAIL_REGEX.test(emailValue)) {
       return res.status(400).json({
         error: 'Please use your college CS email. Format: 0801CSYYRRRR@gmail.com'
       });
+    }
+
+    // Email must have gone through send-otp + verify-otp before an account
+    // can be created.
+    const otpVerified = await emailOtps.isVerified(emailValue);
+    if (!otpVerified) {
+      return res.status(400).json({ error: 'Please verify your email with the OTP before registering.' });
     }
 
     const existingEmail = await users.findByEmail(emailValue);
@@ -116,6 +194,10 @@ apiRouter.post('/auth/register', async (req, res) => {
       semester: semester || '1st Semester',
       avatar: null
     });
+
+    // Consumed — the next registration attempt for this email needs a
+    // fresh OTP.
+    await emailOtps.deleteByEmail(emailValue);
 
     const token = jwt.sign({ userId: newUser._id, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });
 
@@ -213,7 +295,12 @@ apiRouter.get('/items/:id', async (req, res) => {
       return res.status(404).json({ error: 'Resource listing not found' });
     }
 
-    const ownerRatings = await ratings.findForUser(item.ownerId);
+    // ownerComplaints = non-rejected complaints against the owner, without
+    // reporter / proof / admin-note details (public endpoint).
+    const [ownerRatings, ownerComplaints] = await Promise.all([
+      ratings.findForUser(item.ownerId),
+      complaints.findPublicAgainst(item.ownerId)
+    ]);
 
     return res.json({
       item,
@@ -227,7 +314,8 @@ apiRouter.get('/items/:id', async (req, res) => {
         averageRating: item.averageRating,
         totalRatings: item.totalRatings
       },
-      ownerRatings
+      ownerRatings,
+      ownerComplaints
     });
   } catch (err) {
     console.error('get item error:', err);
@@ -884,6 +972,13 @@ apiRouter.post('/complaints', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Reported user, complaint type, and description are required' });
     }
 
+    // Proof image is mandatory — no default/placeholder image is used as a
+    // fallback. The client must upload a file via POST /complaints/proof
+    // first and pass the returned url here.
+    if (!proofUrl) {
+      return res.status(400).json({ error: 'Please upload an image as proof before submitting the complaint.' });
+    }
+
     const trimmed = String(reportedUserId).trim();
     const reportedUser = (await users.findById(trimmed)) || (await users.findByEmail(trimmed));
     if (!reportedUser) {
@@ -897,7 +992,7 @@ apiRouter.post('/complaints', authenticateToken, async (req, res) => {
       itemTitle,
       type,
       description,
-      proofUrl: proofUrl || 'https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&q=80&w=800'
+      proofUrl
     });
 
     await checkAndApplyAutoBlock(reportedUser._id);
@@ -1020,6 +1115,8 @@ apiRouter.get('/admin/users', authenticateToken, requireAdmin, async (req, res) 
 });
 
 // PUT /api/admin/users/:id/block
+// Manual admin block/unblock (works even with just 1 complaint). setBlocked
+// defaults to source 'manual', so these are never auto-unblocked.
 apiRouter.put('/admin/users/:id/block', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const targetUser = await users.findById(req.params.id);
@@ -1084,6 +1181,14 @@ apiRouter.put('/admin/complaints/:id', authenticateToken, requireAdmin, async (r
       });
     }
 
+    if (status === 'Rejected') {
+      // Dismissed as a fake/invalid complaint — recompute the reported
+      // student's complaint count. If they were AUTO-blocked and now have
+      // fewer than 5 complaints, checkAndApplyAutoBlock unblocks them.
+      await checkAndApplyAutoBlock(complaint.reportedUserId);
+      return res.json({ message: 'Complaint rejected and removed from student\'s record', complaint: updated });
+    }
+
     return res.json({ message: 'Complaint updated', complaint: updated });
   } catch (err) {
     console.error('update complaint error:', err);
@@ -1128,4 +1233,31 @@ apiRouter.put('/notifications/:id/read', authenticateToken, async (req, res) => 
     console.error('mark notification read error:', err);
     return res.status(500).json({ error: 'Could not update notification' });
   }
+});
+
+// ----------------------------------------------------
+// GLOBAL ERROR HANDLER
+// ----------------------------------------------------
+// Without this, an error thrown by multer (bad file type, file too large)
+// or anything else outside a route's own try/catch would reach Express's
+// default handler and the connection could close without a proper JSON
+// body — which is what causes the frontend's
+// "Unexpected end of JSON input" error. This guarantees every error
+// response is real, parseable JSON.
+apiRouter.use((err, req, res, next) => {
+  console.error('Unhandled API error:', err);
+
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File is too large. Max size is 5 MB.' });
+    }
+    return res.status(400).json({ error: err.message || 'File upload error' });
+  }
+
+  // fileFilter in upload.js rejects bad file types via a plain Error
+  if (err && err.message && err.message.toLowerCase().includes('allowed')) {
+    return res.status(400).json({ error: err.message });
+  }
+
+  return res.status(500).json({ error: 'Something went wrong. Please try again.' });
 });

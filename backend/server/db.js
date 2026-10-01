@@ -103,8 +103,14 @@ export const users = {
       [id, name || null, mobileNumber || null, semester || null, avatar || null]
     ),
 
-  setBlocked: (id, isBlocked) =>
-    queryOne('UPDATE users SET is_blocked = $2, updated_at = now() WHERE id = $1 RETURNING *', [id, isBlocked]),
+  // source: 'manual' (admin blocked) or 'auto' (5+ complaints). Only 'auto'
+  // blocks are lifted automatically when complaints get rejected.
+  // Needs: ALTER TABLE users ADD COLUMN IF NOT EXISTS block_source VARCHAR(10);
+  setBlocked: (id, isBlocked, source = 'manual') =>
+    queryOne(
+      'UPDATE users SET is_blocked = $2, block_source = $3, updated_at = now() WHERE id = $1 RETURNING *',
+      [id, isBlocked, isBlocked ? source : null]
+    ),
 
   // updateProfile's COALESCE can only set avatar to a new truthy value, never
   // clear it back to null — this does the explicit clear for "remove photo".
@@ -455,8 +461,21 @@ export const complaints = {
 
   findById: (id) => queryOne(`${COMPLAINT_SELECT} WHERE c.id = $1`, [id]),
 
+  // Rejected complaints (dismissed by admin as fake) don't count toward
+  // the auto-block threshold.
   countByReportedUser: async (userId) =>
-    (await queryOne('SELECT COUNT(*)::int AS count FROM complaints WHERE reported_user_id = $1', [userId])).count,
+    (await queryOne(`SELECT COUNT(*)::int AS count FROM complaints WHERE reported_user_id = $1 AND status != 'Rejected'`, [userId])).count,
+
+  // Public view for the item page: only non-rejected complaints, and no
+  // reporter / proof / admin note — just what the complaint was about.
+  findPublicAgainst: (userId) =>
+    queryRows(
+      `SELECT id, type, description, status, created_at
+       FROM complaints
+       WHERE reported_user_id = $1 AND status != 'Rejected'
+       ORDER BY created_at DESC`,
+      [userId]
+    ),
 
   countPending: async () =>
     (await queryOne(`SELECT COUNT(*)::int AS count FROM complaints WHERE status IN ('Pending','Under Review')`)).count,
@@ -538,6 +557,41 @@ export const notifications = {
 };
 
 // ----------------------------------------------------
+// EMAIL OTPs (registration email verification)
+// ----------------------------------------------------
+// Needs: CREATE TABLE email_otps (...) — see migration SQL provided with
+// this feature.
+export const emailOtps = {
+  // Replaces any pending OTP for this email with a fresh one.
+  create: async (email, otpCode, expiresInMinutes = 10) => {
+    await pool.query('DELETE FROM email_otps WHERE email = $1', [email]);
+    const id = genId('otp');
+    const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
+    await pool.query(
+      `INSERT INTO email_otps (id, email, otp_code, verified, expires_at)
+       VALUES ($1,$2,$3,false,$4)`,
+      [id, email, otpCode, expiresAt]
+    );
+    return queryOne('SELECT * FROM email_otps WHERE id = $1', [id]);
+  },
+
+  findLatestByEmail: (email) =>
+    queryOne('SELECT * FROM email_otps WHERE email = $1 ORDER BY created_at DESC LIMIT 1', [email]),
+
+  markVerified: (email) =>
+    pool.query('UPDATE email_otps SET verified = true WHERE email = $1', [email]),
+
+  // Has this email completed OTP verification for a registration that
+  // hasn't been consumed yet? (Row is deleted once the account is created.)
+  isVerified: async (email) => {
+    const row = await queryOne('SELECT * FROM email_otps WHERE email = $1 AND verified = true', [email]);
+    return !!row;
+  },
+
+  deleteByEmail: (email) => pool.query('DELETE FROM email_otps WHERE email = $1', [email])
+};
+
+// ----------------------------------------------------
 // AUTO-BLOCK
 // ----------------------------------------------------
 // Recomputes a user's complaint_count from the complaints table and blocks
@@ -549,8 +603,9 @@ export async function checkAndApplyAutoBlock(userId) {
   const count = await complaints.countByReportedUser(userId);
   await users.setComplaintCount(userId, count);
 
+  // Requirement 1: 5+ complaints -> auto block
   if (count >= 5 && !user.isBlocked) {
-    await users.setBlocked(userId, true);
+    await users.setBlocked(userId, true, 'auto');
     await notifications.create({
       userId,
       title: 'Account Blocked',
@@ -560,5 +615,20 @@ export async function checkAndApplyAutoBlock(userId) {
     });
     return true;
   }
+
+  // Requirement 3: auto-blocked user ka count 5 se neeche aaye -> khud unblock.
+  // Manual (admin) block ko yahan touch nahi karte.
+  if (count < 5 && user.isBlocked && user.blockSource === 'auto') {
+    await users.setBlocked(userId, false);
+    await notifications.create({
+      userId,
+      title: 'Account Unblocked',
+      message:
+        'A complaint against you was rejected by the admin, so your account has been automatically unblocked. You can log in again.',
+      type: 'system'
+    });
+    return false;
+  }
+
   return user.isBlocked;
 }

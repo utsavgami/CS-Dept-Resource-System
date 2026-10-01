@@ -215,7 +215,9 @@ export const AdminDashboardPage = () => {
                     </td>
                     <td className="p-3">
                       <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
-                        c.status === 'Resolved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        c.status === 'Resolved' ? 'bg-emerald-100 text-emerald-800' :
+                        c.status === 'Rejected' ? 'bg-slate-200 text-slate-600' :
+                        'bg-amber-100 text-amber-800'
                       }`}>
                         {c.status}
                       </span>
@@ -363,9 +365,16 @@ export const AdminDashboardPage = () => {
                 Cancel
               </button>
               <button
+                onClick={() => handleResolveComplaint(selectedComplaint._id, 'Rejected')}
+                disabled={actionLoading}
+                className="px-5 py-2 rounded-xl bg-red-600 text-white font-bold hover:bg-red-700 disabled:opacity-60"
+              >
+                {actionLoading ? 'Processing...' : 'Reject (Fake Complaint)'}
+              </button>
+              <button
                 onClick={() => handleResolveComplaint(selectedComplaint._id, 'Resolved')}
                 disabled={actionLoading}
-                className="px-5 py-2 rounded-xl bg-purple-600 text-white font-bold hover:bg-purple-700"
+                className="px-5 py-2 rounded-xl bg-purple-600 text-white font-bold hover:bg-purple-700 disabled:opacity-60"
               >
                 {actionLoading ? 'Processing...' : 'Approve & Mark Resolved'}
               </button>

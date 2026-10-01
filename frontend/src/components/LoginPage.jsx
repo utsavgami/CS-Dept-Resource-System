@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api, setAuthToken, setStoredUser } from '../lib/apiClient';
-import { LogIn, Mail, Lock, Sparkles, ShieldCheck } from 'lucide-react';
+import { LogIn, Mail, Lock, Sparkles, ShieldCheck, Loader2 } from 'lucide-react';
+import { animate, createScope, stagger } from 'animejs';
 
 export const LoginPage = ({
   onSuccess,
@@ -11,6 +12,68 @@ export const LoginPage = ({
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const rootRef = useRef(null);
+  const scopeRef = useRef(null);
+  const errorRef = useRef(null);
+  const buttonRef = useRef(null);
+
+  // Mount animation: card fades/scales in, the icon badge pops with a
+  // spring, then each form field eases up in a staggered sequence.
+  useEffect(() => {
+    scopeRef.current = createScope({ root: rootRef }).add(() => {
+      animate('.login-card', {
+        opacity: [0, 1],
+        translateY: [24, 0],
+        scale: [0.97, 1],
+        ease: 'outExpo',
+        duration: 600
+      });
+
+      animate('.login-icon', {
+        opacity: [0, 1],
+        scale: [0.4, 1.08, 1],
+        rotate: [-12, 2, 0],
+        ease: 'outElastic(1, .6)',
+        duration: 900,
+        delay: 150
+      });
+
+      animate('.anime-field', {
+        opacity: [0, 1],
+        translateY: [16, 0],
+        ease: 'outQuad',
+        duration: 500,
+        delay: stagger(90, { start: 320 })
+      });
+    });
+
+    // Properly revert every anime.js instance declared in this scope when
+    // the component unmounts (e.g. switching to the Register page).
+    return () => scopeRef.current.revert();
+  }, []);
+
+  // Shake the error banner every time a new error message comes in.
+  useEffect(() => {
+    if (error && errorRef.current) {
+      animate(errorRef.current, {
+        opacity: [0, 1],
+        translateX: [0, -8, 7, -6, 4, -2, 0],
+        ease: 'outQuad',
+        duration: 500
+      });
+    }
+  }, [error]);
+
+  const handleButtonPress = () => {
+    if (buttonRef.current) {
+      animate(buttonRef.current, {
+        scale: [1, 0.95, 1],
+        ease: 'outQuad',
+        duration: 300
+      });
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -35,12 +98,12 @@ export const LoginPage = ({
   };
 
   return (
-    <div className="max-w-md mx-auto py-12 animate-in fade-in">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl space-y-6">
+    <div ref={rootRef} className="max-w-md mx-auto py-12">
+      <div className="login-card bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl space-y-6">
 
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 mx-auto flex items-center justify-center">
+          <div className="login-icon w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 mx-auto flex items-center justify-center">
             <LogIn className="w-6 h-6" />
           </div>
           <h2 className="text-2xl font-black text-slate-900 dark:text-white">
@@ -52,14 +115,17 @@ export const LoginPage = ({
         </div>
 
         {error && (
-          <div className="p-3 rounded-xl bg-red-50 text-red-600 dark:bg-red-950/60 dark:text-red-300 text-xs font-semibold border border-red-200 dark:border-red-800 leading-relaxed">
+          <div
+            ref={errorRef}
+            className="p-3 rounded-xl bg-red-50 text-red-600 dark:bg-red-950/60 dark:text-red-300 text-xs font-semibold border border-red-200 dark:border-red-800 leading-relaxed"
+          >
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
 
-          <div>
+          <div className="anime-field">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
               College Email (@sgsits.ac.in)
             </label>
@@ -76,7 +142,7 @@ export const LoginPage = ({
             </div>
           </div>
 
-          <div>
+          <div className="anime-field">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
               Password
             </label>
@@ -94,11 +160,18 @@ export const LoginPage = ({
           </div>
 
           <button
+            ref={buttonRef}
             type="submit"
             disabled={loading}
-            className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-600/30 transition flex items-center justify-center space-x-2 disabled:opacity-50"
+            onMouseDown={handleButtonPress}
+            className="anime-field w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-600/30 transition-colors flex items-center justify-center space-x-2 disabled:opacity-50"
           >
-            {loading ? <span>Authenticating...</span> : (
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Authenticating...</span>
+              </>
+            ) : (
               <>
                 <LogIn className="w-4 h-4" />
                 <span>Sign In to CS Portal</span>

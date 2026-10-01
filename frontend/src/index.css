@@ -140,6 +140,40 @@ table tbody tr:hover {
   box-shadow: 0 10px 22px rgba(15, 23, 42, 0.45);
 }
 
+/* ---- Login / Register page animations ---- */
+@keyframes auth-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes auth-icon-pop {
+  0% { opacity: 0; transform: scale(0.5) rotate(-8deg); }
+  60% { opacity: 1; transform: scale(1.08) rotate(2deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+@keyframes auth-shake-in {
+  0% { opacity: 0; transform: translateX(0); }
+  15% { opacity: 1; transform: translateX(-6px); }
+  30% { transform: translateX(5px); }
+  45% { transform: translateX(-4px); }
+  60% { transform: translateX(3px); }
+  75% { transform: translateX(-2px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+.auth-page-enter {
+  animation: auth-fade-up 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.auth-icon-badge {
+  animation: auth-icon-pop 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.auth-error-shake {
+  animation: auth-shake-in 420ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .profile-panel {
     animation: none;
@@ -151,6 +185,12 @@ table tbody tr:hover {
   .resource-card:hover {
     transform: none;
     transition: none;
+    animation: none;
+  }
+
+  .auth-page-enter,
+  .auth-icon-badge,
+  .auth-error-shake {
     animation: none;
   }
 }

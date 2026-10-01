@@ -47,6 +47,8 @@ export const ItemDetailsPage = ({
 
   const [ownerData, setOwnerData] = useState(null);
   const [ownerRatings, setOwnerRatings] = useState([]);
+  // Complaints against the owner (rejected ones are already excluded by the backend)
+  const [ownerComplaints, setOwnerComplaints] = useState([]);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState("");
   const [bookingSuccessMsg, setBookingSuccessMsg] = useState("");
@@ -112,6 +114,7 @@ export const ItemDetailsPage = ({
       const ownerId = res.owner?._id;
 
       setOwnerRatings(res.ownerRatings || []);
+      setOwnerComplaints(res.ownerComplaints || []);
 
       // Fetch the profile for the owner of this resource, never the viewer.
       if (ownerId) {
@@ -390,6 +393,36 @@ export const ItemDetailsPage = ({
                       </div>
                       <p className="text-slate-600 dark:text-slate-400 italic">
                         "{r.comment}"
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Complaints against this owner (rejected ones are excluded by the backend) */}
+            {ownerComplaints.length > 0 && (
+              <div className="space-y-3 pt-2">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center space-x-1">
+                  <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                  <span>Complaints ({ownerComplaints.length})</span>
+                </h4>
+                <div className="space-y-2">
+                  {ownerComplaints.map((c) => (
+                    <div
+                      key={c._id}
+                      className="p-3 bg-red-50 dark:bg-red-950/20 rounded-xl text-xs space-y-1 border border-red-100 dark:border-red-900/40"
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-red-700 dark:text-red-400">
+                          {c.type}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {new Date(c.createdAt).toLocaleDateString("en-IN")}
+                        </span>
+                      </div>
+                      <p className="text-slate-600 dark:text-slate-400">
+                        {c.description}
                       </p>
                     </div>
                   ))}

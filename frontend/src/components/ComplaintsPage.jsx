@@ -6,7 +6,8 @@ import {
   Upload,
   Loader2,
   CheckCircle2,
-  PlusCircle
+  PlusCircle,
+  Trash2
 } from 'lucide-react';
 
 export const ComplaintsPage = ({
@@ -66,6 +67,13 @@ export const ComplaintsPage = ({
       return;
     }
 
+    // Proof image is required — block the request before it ever reaches
+    // the backend if no file has been uploaded yet.
+    if (!proofUrl) {
+      setError('Please upload an image as proof before submitting the complaint.');
+      return;
+    }
+
     try {
       setSubmitting(true);
       const res = await api.createComplaint({
@@ -74,7 +82,7 @@ export const ComplaintsPage = ({
         itemTitle: initialBooking?.itemTitle,
         type,
         description,
-        proofUrl: proofUrl || undefined
+        proofUrl
       });
 
       setSuccessMsg(res.message);
@@ -106,6 +114,13 @@ export const ComplaintsPage = ({
     } finally {
       setUploadingProof(false);
     }
+  };
+
+  // Clears the currently attached proof (the file itself stays on disk —
+  // this just detaches it from the form so a different one can be chosen).
+  const handleRemoveProof = () => {
+    setProofUrl('');
+    setUploadError('');
   };
 
   return (
@@ -223,16 +238,27 @@ export const ComplaintsPage = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Upload Proof (Photo / Screenshot / PDF)
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 gap-1.5 flex items-center">
+                Upload Proof (Photo / Screenshot / PDF) *
               </label>
-              <div className="flex flex-col sm:flex-row items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-center gap-4">
                 {proofUrl && (
-                  <img
-                    src={proofUrl}
-                    alt="Proof preview"
-                    className="w-14 h-14 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-                  />
+                  <div className="relative shrink-0 ">
+                    <img
+                      src={proofUrl}
+                      alt="Proof preview"
+                      className="w-14 h-15 rounded-lg object-cover border border-slate-200 dark:border-slate-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRemoveProof}
+                      disabled={uploadingProof}
+                      title="Remove this file"
+                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow disabled:opacity-60 disabled:cursor-wait focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-500"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 )}
                 <label className={`w-full sm:w-auto px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer flex items-center justify-center space-x-1.5 shrink-0 transition ${uploadingProof ? 'opacity-60 cursor-wait bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
                   {uploadingProof ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
@@ -246,7 +272,7 @@ export const ComplaintsPage = ({
                   />
                 </label>
                 <span className="text-[10px] text-slate-400">
-                  {proofUrl ? 'File attached' : 'Optional — max 5 MB'}
+                  {proofUrl ? 'File attached' : 'Required — max 5 MB'}
                 </span>
               </div>
               {uploadError && (

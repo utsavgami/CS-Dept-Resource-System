@@ -84,6 +84,8 @@ export const api = {
   // Auth
   register: (data) => fetchWithAuth('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data) => fetchWithAuth('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  sendOtp: (data) => fetchWithAuth('/auth/send-otp', { method: 'POST', body: JSON.stringify(data) }),
+  verifyOtp: (data) => fetchWithAuth('/auth/verify-otp', { method: 'POST', body: JSON.stringify(data) }),
   getMe: () => fetchWithAuth('/auth/me'),
 
   // Users
