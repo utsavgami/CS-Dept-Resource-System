@@ -117,6 +117,9 @@ export const users = {
   clearAvatar: (id) =>
     queryOne('UPDATE users SET avatar = NULL, updated_at = now() WHERE id = $1 RETURNING *', [id]),
 
+  setPassword: (id, passwordHash) =>
+    queryOne('UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1 RETURNING *', [id, passwordHash]),
+
   setComplaintCount: (id, count) =>
     queryOne('UPDATE users SET complaint_count = $2, updated_at = now() WHERE id = $1 RETURNING *', [id, count]),
 
@@ -307,19 +310,116 @@ export const bookings = {
   findByOwner: (userId) =>
     queryRows(`${BOOKING_SELECT} WHERE b.owner_id = $1 ORDER BY b.created_at DESC`, [userId]),
 
-  create: async ({ itemId, borrowerId, ownerId, startDate, endDate, totalDays, totalCost }) => {
+  create: async ({
+    itemId,
+    borrowerId,
+    ownerId,
+    startDate,
+    endDate,
+    totalDays,
+    totalCost,
+    isFastDelivery = false,
+    fastDeliveryFee = 0,
+    expiresAt = null
+  }) => {
     const id = genId('bkg');
     await pool.query(
-      `INSERT INTO bookings (id, item_id, borrower_id, owner_id, start_date, end_date, total_days, total_cost, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pending')`,
-      [id, itemId, borrowerId, ownerId, startDate, endDate, totalDays, totalCost]
+      `INSERT INTO bookings
+         (id, item_id, borrower_id, owner_id, start_date, end_date, total_days, total_cost, status, is_fast_delivery, fast_delivery_fee, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Pending',$9,$10,$11)`,
+      [id, itemId, borrowerId, ownerId, startDate, endDate, totalDays, totalCost, isFastDelivery, fastDeliveryFee, expiresAt]
     );
     return bookings.findById(id);
   },
 
+  // Plain status transition — used for Reject / Complete, where there's no
+  // expiry race to worry about.
   updateStatus: async (id, status) => {
     await pool.query('UPDATE bookings SET status = $2, updated_at = now() WHERE id = $1', [id, status]);
     return bookings.findById(id);
+  },
+
+  // Atomic, expiry-aware accept. Succeeds only while still Pending, and —
+  // for Fast Delivery bookings — only before expires_at. This is the single
+  // source of truth for whether an accept is allowed: it does NOT depend on
+  // the background sweep having already run, so a late accept is rejected
+  // even if the sweep is delayed or down.
+  acceptIfPending: async (id) => {
+    const result = await pool.query(
+      `UPDATE bookings
+         SET status = 'Accepted', accepted_at = now(), updated_at = now()
+       WHERE id = $1
+         AND status = 'Pending'
+         AND (is_fast_delivery = false OR expires_at > now())
+       RETURNING id`,
+      [id]
+    );
+    if (result.rowCount === 0) {
+      // Didn't accept. If this is a Fast Delivery booking that just passed
+      // its deadline, flip it to Expired right now instead of waiting for
+      // the next sweep tick.
+      await bookings.expireIfOverdue(id);
+      return null;
+    }
+    return bookings.findById(id);
+  },
+
+  // Flips a single Fast Delivery booking to Expired if it's overdue.
+  // Idempotent — a no-op (rowCount 0) if it's already been handled by
+  // something else (accepted, rejected, or already expired).
+  expireIfOverdue: async (id) => {
+    const result = await pool.query(
+      `UPDATE bookings
+         SET status = 'Expired', expired_at = now(), updated_at = now()
+       WHERE id = $1
+         AND status = 'Pending'
+         AND is_fast_delivery = true
+         AND expires_at <= now()
+       RETURNING id`,
+      [id]
+    );
+    return result.rowCount > 0;
+  },
+
+  // Background sweep: bulk-expires every overdue Fast Delivery booking in
+  // one query. Idempotent — the WHERE clause only ever matches rows still
+  // Pending, so re-running it is always safe. Call on a timer from server.js.
+  expireOverdueFastDeliveryRequests: async () => {
+    const result = await pool.query(
+      `UPDATE bookings
+         SET status = 'Expired', expired_at = now(), updated_at = now()
+       WHERE is_fast_delivery = true
+         AND status = 'Pending'
+         AND expires_at <= now()
+       RETURNING id`
+    );
+
+    for (const row of result.rows) {
+      const b = await bookings.findById(row.id); // joined version, for names in the notification copy
+      if (!b) continue;
+
+      await notifications.create({
+        userId: b.borrowerId,
+        title: 'Fast Delivery Request Expired',
+        message: `${b.ownerName} didn't accept your Fast Delivery request for "${b.itemTitle}" within 30 minutes, so it expired. The item is still listed — you can request it again.`,
+        type: 'booking',
+        link: '/bookings'
+      });
+
+      await notifications.create({
+        userId: b.ownerId,
+        title: 'Fast Delivery Request Expired',
+        message: `A Fast Delivery request for "${b.itemTitle}" expired because it wasn't accepted within 30 minutes. It can no longer be accepted.`,
+        type: 'booking',
+        link: '/bookings'
+      });
+
+      console.log(
+        `[FAST_BOOKING_EXPIRED] booking_id=${b._id} user_id=${b.borrowerId} owner_id=${b.ownerId} product_id=${b.itemId} timestamp=${new Date().toISOString()}`
+      );
+    }
+
+    return result.rows.length;
   },
 
   countAll: async () => (await queryOne('SELECT COUNT(*)::int AS count FROM bookings')).count,
@@ -557,38 +657,46 @@ export const notifications = {
 };
 
 // ----------------------------------------------------
-// EMAIL OTPs (registration email verification)
+// EMAIL OTPs (registration email verification + password reset)
 // ----------------------------------------------------
 // Needs: CREATE TABLE email_otps (...) — see migration SQL provided with
-// this feature.
+// this feature. `purpose` ('register' | 'reset') keeps a registration OTP
+// from being usable to reset an unrelated account's password, and vice versa.
 export const emailOtps = {
-  // Replaces any pending OTP for this email with a fresh one.
-  create: async (email, otpCode, expiresInMinutes = 10) => {
-    await pool.query('DELETE FROM email_otps WHERE email = $1', [email]);
+  // Replaces any pending OTP for this email+purpose with a fresh one.
+  create: async (email, otpCode, purpose = 'register', expiresInMinutes = 10) => {
+    await pool.query('DELETE FROM email_otps WHERE email = $1 AND purpose = $2', [email, purpose]);
     const id = genId('otp');
     const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
     await pool.query(
-      `INSERT INTO email_otps (id, email, otp_code, verified, expires_at)
-       VALUES ($1,$2,$3,false,$4)`,
-      [id, email, otpCode, expiresAt]
+      `INSERT INTO email_otps (id, email, otp_code, purpose, verified, expires_at)
+       VALUES ($1,$2,$3,$4,false,$5)`,
+      [id, email, otpCode, purpose, expiresAt]
     );
     return queryOne('SELECT * FROM email_otps WHERE id = $1', [id]);
   },
 
-  findLatestByEmail: (email) =>
-    queryOne('SELECT * FROM email_otps WHERE email = $1 ORDER BY created_at DESC LIMIT 1', [email]),
+  findLatestByEmail: (email, purpose = 'register') =>
+    queryOne(
+      'SELECT * FROM email_otps WHERE email = $1 AND purpose = $2 ORDER BY created_at DESC LIMIT 1',
+      [email, purpose]
+    ),
 
-  markVerified: (email) =>
-    pool.query('UPDATE email_otps SET verified = true WHERE email = $1', [email]),
+  markVerified: (email, purpose = 'register') =>
+    pool.query('UPDATE email_otps SET verified = true WHERE email = $1 AND purpose = $2', [email, purpose]),
 
-  // Has this email completed OTP verification for a registration that
-  // hasn't been consumed yet? (Row is deleted once the account is created.)
-  isVerified: async (email) => {
-    const row = await queryOne('SELECT * FROM email_otps WHERE email = $1 AND verified = true', [email]);
+  // Has this email completed OTP verification for this purpose, not yet
+  // consumed? (Row is deleted once the account is created / password reset.)
+  isVerified: async (email, purpose = 'register') => {
+    const row = await queryOne(
+      'SELECT * FROM email_otps WHERE email = $1 AND purpose = $2 AND verified = true',
+      [email, purpose]
+    );
     return !!row;
   },
 
-  deleteByEmail: (email) => pool.query('DELETE FROM email_otps WHERE email = $1', [email])
+  deleteByEmail: (email, purpose = 'register') =>
+    pool.query('DELETE FROM email_otps WHERE email = $1 AND purpose = $2', [email, purpose])
 };
 
 // ----------------------------------------------------

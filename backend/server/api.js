@@ -21,8 +21,14 @@ import { sendOtpEmail } from './mailer.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cs_department_jwt_secret_key_2026';
 
-// Format: 0801CSYYRRRR@gmail.com — shared by send-otp, verify-otp and register.
-const COLLEGE_EMAIL_REGEX = /^0801cs\d{2}\d{4}@gmail\.com$/i;
+// Format: 0801CSYYRRRR@sgsits.ac.in — shared by send-otp, verify-otp and register.
+const COLLEGE_EMAIL_REGEX = /^0801cs\d{2}\d{4}@sgsits\.ac\.in$/i;
+
+// Fast Delivery: surcharge is a percentage of the rental fee (price/day ×
+// days), rounded to the nearest rupee, plus the owner's acceptance window.
+// Must match FAST_DELIVERY_FEE_PERCENT in frontend/src/components/ItemDetailsPage.jsx.
+const FAST_DELIVERY_FEE_PERCENT = 0.25;
+const FAST_DELIVERY_WINDOW_MINUTES = 30;
 
 export const apiRouter = express.Router();
 apiRouter.use(express.json());
@@ -83,7 +89,7 @@ apiRouter.post('/auth/send-otp', async (req, res) => {
     const emailValue = String(email).trim().toLowerCase();
     if (!COLLEGE_EMAIL_REGEX.test(emailValue)) {
       return res.status(400).json({
-        error: 'Please use your college CS email. Format: 0801CSYYRRRR@gmail.com'
+        error: 'Please use your college CS email. Format: 0801CSYYRRRR@sgsits.ac.in'
       });
     }
 
@@ -93,7 +99,7 @@ apiRouter.post('/auth/send-otp', async (req, res) => {
     }
 
     const otpCode = String(Math.floor(100000 + Math.random() * 900000));
-    await emailOtps.create(emailValue, otpCode, 10);
+    await emailOtps.create(emailValue, otpCode, 'register', 10);
 
     try {
       await sendOtpEmail(emailValue, otpCode);
@@ -118,7 +124,7 @@ apiRouter.post('/auth/verify-otp', async (req, res) => {
     }
 
     const emailValue = String(email).trim().toLowerCase();
-    const record = await emailOtps.findLatestByEmail(emailValue);
+    const record = await emailOtps.findLatestByEmail(emailValue, 'register');
 
     if (!record) {
       return res.status(400).json({ error: 'No OTP found for this email. Please request a new one.' });
@@ -130,7 +136,7 @@ apiRouter.post('/auth/verify-otp', async (req, res) => {
       return res.status(400).json({ error: 'Incorrect OTP. Please check and try again.' });
     }
 
-    await emailOtps.markVerified(emailValue);
+    await emailOtps.markVerified(emailValue, 'register');
     return res.json({ message: 'Email verified successfully.' });
   } catch (err) {
     console.error('verify-otp error:', err);
@@ -156,18 +162,18 @@ apiRouter.post('/auth/register', async (req, res) => {
     }
 
     // ONLY COLLEGE CS GMAIL ALLOWED
-    // Format: 0801CSYYRRRR@gmail.com
+    // Format: 0801CSYYRRRR@sgsits.ac.in
     const emailValue = String(email).trim().toLowerCase();
 
     if (!COLLEGE_EMAIL_REGEX.test(emailValue)) {
       return res.status(400).json({
-        error: 'Please use your college CS email. Format: 0801CSYYRRRR@gmail.com'
+        error: 'Please use your college CS email. Format: 0801CSYYRRRR@sgsits.ac.in'
       });
     }
 
     // Email must have gone through send-otp + verify-otp before an account
     // can be created.
-    const otpVerified = await emailOtps.isVerified(emailValue);
+    const otpVerified = await emailOtps.isVerified(emailValue, 'register');
     if (!otpVerified) {
       return res.status(400).json({ error: 'Please verify your email with the OTP before registering.' });
     }
@@ -197,7 +203,7 @@ apiRouter.post('/auth/register', async (req, res) => {
 
     // Consumed — the next registration attempt for this email needs a
     // fresh OTP.
-    await emailOtps.deleteByEmail(emailValue);
+    await emailOtps.deleteByEmail(emailValue, 'register');
 
     const token = jwt.sign({ userId: newUser._id, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });
 
@@ -249,6 +255,115 @@ apiRouter.post('/auth/login', async (req, res) => {
   } catch (err) {
     console.error('login error:', err);
     return res.status(500).json({ error: 'Could not log in' });
+  }
+});
+
+// ----------------------------------------------------
+// FORGOT PASSWORD (email OTP) — mirrors the register OTP flow, but requires
+// an account to already EXIST for the email, and uses purpose 'reset' so it
+// never interferes with a pending registration OTP for the same address.
+// ----------------------------------------------------
+
+// POST /api/auth/forgot-password/send-otp
+apiRouter.post('/auth/forgot-password/send-otp', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const emailValue = String(email).trim().toLowerCase();
+    if (!COLLEGE_EMAIL_REGEX.test(emailValue)) {
+      return res.status(400).json({
+        error: 'Please use your college CS email. Format: 0801CSYYRRRR@sgsits.ac.in'
+      });
+    }
+
+    const existingUser = await users.findByEmail(emailValue);
+    if (!existingUser) {
+      return res.status(404).json({ error: 'No account found with this email.' });
+    }
+
+    const otpCode = String(Math.floor(100000 + Math.random() * 900000));
+    await emailOtps.create(emailValue, otpCode, 'reset', 10);
+
+    try {
+      await sendOtpEmail(emailValue, otpCode, 'reset');
+    } catch (mailErr) {
+      console.error('send reset otp email error:', mailErr);
+      return res.status(500).json({ error: 'Could not send verification email. Please try again in a moment.' });
+    }
+
+    return res.json({ message: 'A 6-digit code has been sent to your email. It is valid for 10 minutes.' });
+  } catch (err) {
+    console.error('forgot-password send-otp error:', err);
+    return res.status(500).json({ error: 'Could not send OTP' });
+  }
+});
+
+// POST /api/auth/forgot-password/verify-otp
+apiRouter.post('/auth/forgot-password/verify-otp', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res.status(400).json({ error: 'Email and OTP are required' });
+    }
+
+    const emailValue = String(email).trim().toLowerCase();
+    const record = await emailOtps.findLatestByEmail(emailValue, 'reset');
+
+    if (!record) {
+      return res.status(400).json({ error: 'No OTP found for this email. Please request a new one.' });
+    }
+    if (new Date(record.expiresAt) < new Date()) {
+      return res.status(400).json({ error: 'This OTP has expired. Please request a new one.' });
+    }
+    if (String(record.otpCode) !== String(otp).trim()) {
+      return res.status(400).json({ error: 'Incorrect OTP. Please check and try again.' });
+    }
+
+    await emailOtps.markVerified(emailValue, 'reset');
+    return res.json({ message: 'OTP verified. You can now set a new password.' });
+  } catch (err) {
+    console.error('forgot-password verify-otp error:', err);
+    return res.status(500).json({ error: 'Could not verify OTP' });
+  }
+});
+
+// POST /api/auth/forgot-password/reset — final step: requires a verified
+// 'reset' OTP for this email, consumes it on success.
+apiRouter.post('/auth/forgot-password/reset', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+    if (!email || !newPassword) {
+      return res.status(400).json({ error: 'Email and new password are required' });
+    }
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
+    const emailValue = String(email).trim().toLowerCase();
+
+    const otpVerified = await emailOtps.isVerified(emailValue, 'reset');
+    if (!otpVerified) {
+      return res.status(400).json({ error: 'Please verify your email with the OTP before resetting your password.' });
+    }
+
+    const existingUser = await users.findByEmail(emailValue);
+    if (!existingUser) {
+      return res.status(404).json({ error: 'No account found with this email.' });
+    }
+
+    const passwordHash = await bcrypt.hash(String(newPassword), 10);
+    await users.setPassword(existingUser._id, passwordHash);
+
+    // Consumed — a future reset for this email needs a fresh OTP.
+    await emailOtps.deleteByEmail(emailValue, 'reset');
+
+    return res.json({ message: 'Password reset successfully. You can now log in with your new password.' });
+  } catch (err) {
+    console.error('forgot-password reset error:', err);
+    return res.status(500).json({ error: 'Could not reset password' });
   }
 });
 
@@ -560,7 +675,7 @@ apiRouter.post('/favorites/:itemId', authenticateToken, async (req, res) => {
 apiRouter.post('/bookings', authenticateToken, async (req, res) => {
   try {
     const borrower = req.user;
-    const { itemId, startDate, endDate } = req.body;
+    const { itemId, startDate, endDate, isFastDelivery } = req.body;
 
     if (!itemId || !startDate || !endDate) {
       return res.status(400).json({ error: 'Item ID, start date, and end date are required' });
@@ -618,7 +733,16 @@ apiRouter.post('/bookings', authenticateToken, async (req, res) => {
 
     const diffTime = Math.abs(end.getTime() - start.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
-    const totalCost = diffDays * item.rentPricePerDay + item.securityDeposit;
+
+    // Fast Delivery: surcharge = 25% of the rental fee (never trusted from
+    // the client — recomputed here) + a server-generated 30-minute deadline.
+    const rentalFee = diffDays * item.rentPricePerDay;
+    const fastDelivery = Boolean(isFastDelivery);
+    const fastDeliveryFee = fastDelivery ? Math.round(rentalFee * FAST_DELIVERY_FEE_PERCENT) : 0;
+    const totalCost = rentalFee + item.securityDeposit + fastDeliveryFee;
+    const expiresAt = fastDelivery
+      ? new Date(Date.now() + FAST_DELIVERY_WINDOW_MINUTES * 60 * 1000)
+      : null;
 
     const newBooking = await bookings.create({
       itemId: item._id,
@@ -627,13 +751,24 @@ apiRouter.post('/bookings', authenticateToken, async (req, res) => {
       startDate,
       endDate,
       totalDays: diffDays,
-      totalCost
+      totalCost,
+      isFastDelivery: fastDelivery,
+      fastDeliveryFee,
+      expiresAt
     });
+
+    if (fastDelivery) {
+      console.log(
+        `[FAST_BOOKING_CREATED] booking_id=${newBooking._id} user_id=${newBooking.borrowerId} owner_id=${newBooking.ownerId} product_id=${newBooking.itemId} timestamp=${new Date().toISOString()}`
+      );
+    }
 
     await notifications.create({
       userId: item.ownerId,
-      title: 'New Booking Request',
-      message: `${borrower.name} requested to rent "${item.title}" for ${diffDays} days.`,
+      title: fastDelivery ? '⚡ FAST DELIVERY Booking Request' : 'New Booking Request',
+      message: fastDelivery
+        ? `${borrower.name} requested to rent "${item.title}" with FAST DELIVERY — accept within 30 minutes or the request will automatically expire.`
+        : `${borrower.name} requested to rent "${item.title}" for ${diffDays} days.`,
       type: 'booking',
       link: '/bookings'
     });
@@ -681,18 +816,46 @@ apiRouter.put('/bookings/:id/status', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Only item owner can accept or reject booking requests' });
     }
 
-    const updated = await bookings.updateStatus(req.params.id, status);
+    let updated;
+
+    if (status === 'Accepted') {
+      // Atomic, expiry-aware accept — the single source of truth. This
+      // still rejects a late accept even if the background sweep (which
+      // runs once a minute) hasn't caught this booking yet.
+      updated = await bookings.acceptIfPending(req.params.id);
+      if (!updated) {
+        const fresh = await bookings.findById(req.params.id);
+        if (fresh?.status === 'Expired') {
+          return res.status(409).json({
+            error: 'This Fast Delivery request expired before you accepted it. It can no longer be accepted.'
+          });
+        }
+        return res.status(409).json({
+          error: `This booking is no longer pending (current status: ${fresh?.status || 'unknown'}).`
+        });
+      }
+      console.log(
+        `[FAST_BOOKING_ACCEPTED] booking_id=${updated._id} user_id=${updated.borrowerId} owner_id=${updated.ownerId} product_id=${updated.itemId} timestamp=${new Date().toISOString()}`
+      );
+    } else {
+      updated = await bookings.updateStatus(req.params.id, status);
+      if (status === 'Rejected' && booking.isFastDelivery) {
+        console.log(
+          `[FAST_BOOKING_REJECTED] booking_id=${updated._id} user_id=${updated.borrowerId} owner_id=${updated.ownerId} product_id=${updated.itemId} timestamp=${new Date().toISOString()}`
+        );
+      }
+    }
 
     const targetUserId = isOwner ? booking.borrowerId : booking.ownerId;
     await notifications.create({
       userId: targetUserId,
-      title: `Booking ${status}`,
-      message: `Booking for "${booking.itemTitle}" status updated to: ${status}`,
+      title: `Booking ${updated.status}`,
+      message: `Booking for "${booking.itemTitle}" status updated to: ${updated.status}`,
       type: 'booking',
       link: '/bookings'
     });
 
-    return res.json({ message: `Booking status updated to ${status}`, booking: updated });
+    return res.json({ message: `Booking status updated to ${updated.status}`, booking: updated });
   } catch (err) {
     console.error('update booking status error:', err);
     return res.status(500).json({ error: 'Could not update booking status' });

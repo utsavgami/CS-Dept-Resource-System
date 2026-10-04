@@ -113,6 +113,21 @@ async function startServer() {
     console.log(`URL: http://localhost:${PORT}`);
     console.log(`====================================================`);
   });
+
+  // Fast Delivery expiry sweep — auto-flips any Pending Fast Delivery
+  // booking whose 30-minute deadline has passed to 'Expired', and notifies
+  // both sides. This is a backstop: the accept endpoint (PUT
+  // /bookings/:id/status) ALSO enforces the deadline on every accept
+  // attempt, so correctness never depends on this job having run recently.
+  // Runs once at startup (catches anything missed while the server was
+  // down) and then every minute. Idempotent — safe to run repeatedly.
+  const runFastDeliverySweep = () => {
+    bookings.expireOverdueFastDeliveryRequests().catch((err) => {
+      console.error('[FastDelivery] expiry sweep failed:', err);
+    });
+  };
+  runFastDeliverySweep();
+  setInterval(runFastDeliverySweep, 60 * 1000);
 }
 
 startServer();

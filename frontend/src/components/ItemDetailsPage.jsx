@@ -16,7 +16,13 @@ import {
   DollarSign,
   Heart,
   CalendarX2,
+  Zap,
 } from "lucide-react";
+
+// Fast Delivery surcharge: a percentage of the rental fee (price/day ×
+// days), rounded to the nearest rupee — must match FAST_DELIVERY_FEE_PERCENT
+// in backend/server/api.js.
+const FAST_DELIVERY_FEE_PERCENT = 0.25;
 
 // yyyy-mm-dd string for a Date object, in local time (not UTC), so date
 // inputs and comparisons line up with what the user actually picked.
@@ -49,6 +55,7 @@ export const ItemDetailsPage = ({
   const [ownerRatings, setOwnerRatings] = useState([]);
   // Complaints against the owner (rejected ones are already excluded by the backend)
   const [ownerComplaints, setOwnerComplaints] = useState([]);
+  const [isFastDelivery, setIsFastDelivery] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState("");
   const [bookingSuccessMsg, setBookingSuccessMsg] = useState("");
@@ -143,7 +150,11 @@ export const ItemDetailsPage = ({
   const diffTime = Math.max(0, end.getTime() - start.getTime());
   const rentalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
   const rentalFee = rentalDays * item.rentPricePerDay;
-  const totalAmount = rentalFee + item.securityDeposit;
+  // Computed regardless of the checkbox so the label can preview the
+  // amount before the person opts in.
+  const potentialFastDeliveryFee = Math.round(rentalFee * FAST_DELIVERY_FEE_PERCENT);
+  const fastDeliveryFee = isFastDelivery ? potentialFastDeliveryFee : 0;
+  const totalAmount = rentalFee + item.securityDeposit + fastDeliveryFee;
 
   // Does the currently selected date range overlap any already-booked range?
   const selectedRangeOverlaps = bookedRanges.some((r) => {
@@ -183,10 +194,13 @@ export const ItemDetailsPage = ({
         itemId: item._id,
         startDate,
         endDate,
+        isFastDelivery,
       });
 
       setBookingSuccessMsg(
-        "Booking request sent successfully to owner! Check your Bookings tab.",
+        isFastDelivery
+          ? "Fast Delivery request sent! The owner has 30 minutes to accept — if they don't, it's auto-cancelled and you can rebook."
+          : "Booking request sent successfully to owner! Check your Bookings tab.",
       );
       setTimeout(() => {
         onBookingSuccess();
@@ -531,6 +545,34 @@ export const ItemDetailsPage = ({
                 </p>
               </div>
 
+              {/* Fast Delivery toggle */}
+              <label
+                className={`flex items-start gap-3 p-3.5 rounded-2xl border cursor-pointer transition ${
+                  isFastDelivery
+                    ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800"
+                    : "bg-slate-50 dark:bg-slate-950/50 border-slate-200 dark:border-slate-800 hover:border-amber-200"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isFastDelivery}
+                  onChange={(e) => setIsFastDelivery(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-amber-500 shrink-0"
+                />
+                <div className="flex-1">
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white">
+                    <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                    <span>
+                      Fast Delivery (within 30 minutes) — +{Math.round(FAST_DELIVERY_FEE_PERCENT * 100)}%
+                      {rentalFee > 0 && <> (₹{potentialFastDeliveryFee})</>}
+                    </span>
+                  </span>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    The owner must accept within 30 minutes or the request is automatically cancelled, and you can book again right away.
+                  </p>
+                </div>
+              </label>
+
               {/* Cost Calculation Summary */}
               <div className="p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800 text-xs space-y-2">
                 <div className="flex justify-between text-slate-600 dark:text-slate-400">
@@ -553,6 +595,15 @@ export const ItemDetailsPage = ({
                     ₹{item.securityDeposit}
                   </span>
                 </div>
+                {isFastDelivery && (
+                  <div className="flex justify-between text-amber-600 dark:text-amber-400">
+                    <span className="flex items-center gap-1">
+                      <Zap className="w-3 h-3 fill-amber-400" />
+                      <span>Fast Delivery Fee:</span>
+                    </span>
+                    <span className="font-bold">₹{fastDeliveryFee}</span>
+                  </div>
+                )}
                 <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between font-extrabold text-sm text-slate-900 dark:text-white">
                   <span>Total Due at Pickup:</span>
                   <span className="text-blue-600 dark:text-blue-400">
@@ -568,6 +619,11 @@ export const ItemDetailsPage = ({
               >
                 {bookingLoading ? (
                   <span>Submitting Request...</span>
+                ) : isFastDelivery ? (
+                  <>
+                    <Zap className="w-4 h-4 fill-white" />
+                    <span>Send Fast Delivery Request</span>
+                  </>
                 ) : (
                   <>
                     <BookmarkPlus className="w-4 h-4" />

@@ -5,8 +5,8 @@ import { UserPlus, Mail, Lock, User as UserIcon, Phone, FileText, Upload, Loader
 import { animate, createScope, stagger } from 'animejs';
 
 // Must match the backend's COLLEGE_EMAIL_REGEX in api.js — format:
-// 0801CSYYRRRR@gmail.com
-const COLLEGE_EMAIL_REGEX = /^0801cs\d{2}\d{4}@gmail\.com$/i;
+// 0801CSYYRRRR@sgsits.ac.in
+const COLLEGE_EMAIL_REGEX = /^0801cs\d{2}\d{4}@sgsits\.ac\.in$/i;
 const isValidCollegeEmail = (value) => COLLEGE_EMAIL_REGEX.test(String(value || '').trim());
 
 export const RegisterPage = ({
@@ -180,7 +180,7 @@ export const RegisterPage = ({
   const handleSendOtp = async () => {
     setOtpMessage('');
     if (!isValidCollegeEmail(email)) {
-      setOtpMessage('Enter a valid college email first (format: 0801CSYYRRRR@gmail.com).');
+      setOtpMessage('Enter a valid college email first (format: 0801CSYYRRRR@sgsits.ac.in).');
       setOtpMessageType('error');
       return;
     }

@@ -14,18 +14,34 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-export async function sendOtpEmail(toEmail, otp) {
+// purpose: 'register' | 'reset' — only changes the subject/copy, not the
+// delivery mechanism.
+export async function sendOtpEmail(toEmail, otp, purpose = 'register') {
+  const isReset = purpose === 'reset';
+
+  const subject = isReset
+    ? 'Your CS Portal password reset code'
+    : 'Your CS Portal verification code';
+
+  const intro = isReset
+    ? 'Use the code below to reset your password.'
+    : 'Use the code below to verify your email and finish creating your account.';
+
+  const safetyNote = isReset
+    ? "This code expires in 10 minutes. If you didn't request a password reset, you can safely ignore this email — your password won't change."
+    : "This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.";
+
   await transporter.sendMail({
     from: process.env.SMTP_FROM || process.env.SMTP_USER,
     to: toEmail,
-    subject: 'Your CS Portal verification code',
-    text: `Your CS Department Resource Sharing verification code is ${otp}. It expires in 10 minutes. If you didn't request this, you can ignore this email.`,
+    subject,
+    text: `${intro} Your code is ${otp}. ${safetyNote}`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 420px; margin: 0 auto; padding: 24px;">
         <h2 style="color:#2563eb; margin-bottom: 4px;">CS Department Resource Sharing</h2>
-        <p style="color:#334155; font-size: 14px;">Use the code below to verify your email and finish creating your account.</p>
+        <p style="color:#334155; font-size: 14px;">${intro}</p>
         <p style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color:#0f172a; margin: 20px 0;">${otp}</p>
-        <p style="color:#64748b; font-size: 12px;">This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.</p>
+        <p style="color:#64748b; font-size: 12px;">${safetyNote}</p>
       </div>
     `
   });

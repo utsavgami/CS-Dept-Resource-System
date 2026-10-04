@@ -18,6 +18,7 @@ import { AdminDashboardPage } from './components/AdminDashboardPage';
 import { DocsPage } from './components/DocsPage';
 import { LoginPage } from './components/LoginPage';
 import { RegisterPage } from './components/RegisterPage';
+import { ForgotPasswordPage } from './components/ForgotPasswordPage';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getStoredUser());
@@ -165,6 +166,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
+              onSwitchToForgotPassword={() => setActiveTab('forgot-password')}
               onOpenDemoModal={() => {}}
             />
           )
@@ -189,6 +191,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
+              onSwitchToForgotPassword={() => setActiveTab('forgot-password')}
               onOpenDemoModal={() => {}}
             />
           )
@@ -201,11 +204,13 @@ export default function App() {
               currentUser={currentUser}
               onOpenChat={handleOpenChatForBooking}
               onOpenComplaint={handleOpenComplaintForBooking}
+              onViewDetails={handleSelectItem}
             />
           ) : (
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
+              onSwitchToForgotPassword={() => setActiveTab('forgot-password')}
               onOpenDemoModal={() => {}}
             />
           )
@@ -222,6 +227,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
+              onSwitchToForgotPassword={() => setActiveTab('forgot-password')}
               onOpenDemoModal={() => {}}
             />
           )
@@ -238,6 +244,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
+              onSwitchToForgotPassword={() => setActiveTab('forgot-password')}
               onOpenDemoModal={() => {}}
             />
           )
@@ -255,6 +262,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
+              onSwitchToForgotPassword={() => setActiveTab('forgot-password')}
               onOpenDemoModal={() => {}}
             />
           )
@@ -268,6 +276,7 @@ export default function App() {
             <LoginPage
               onSuccess={handleLoginSuccess}
               onSwitchToRegister={() => setActiveTab('register')}
+              onSwitchToForgotPassword={() => setActiveTab('forgot-password')}
               onOpenDemoModal={() => {}}
             />
           )
@@ -294,6 +303,7 @@ export default function App() {
           <LoginPage
             onSuccess={handleLoginSuccess}
             onSwitchToRegister={() => setActiveTab('register')}
+            onSwitchToForgotPassword={() => setActiveTab('forgot-password')}
             onOpenDemoModal={() => {}}
           />
         )}
@@ -304,6 +314,14 @@ export default function App() {
             onSuccess={handleLoginSuccess}
             onSwitchToLogin={() => setActiveTab('login')}
             onOpenDemoModal={() => {}}
+          />
+        )}
+
+        {/* Forgot Password */}
+        {activeTab === 'forgot-password' && (
+          <ForgotPasswordPage
+            onSuccess={() => setActiveTab('login')}
+            onSwitchToLogin={() => setActiveTab('login')}
           />
         )}
 

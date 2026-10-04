@@ -6,6 +6,7 @@ import { animate, createScope, stagger } from 'animejs';
 export const LoginPage = ({
   onSuccess,
   onSwitchToRegister,
+  onSwitchToForgotPassword,
   onOpenDemoModal
 }) => {
   const [email, setEmail] = useState('');
@@ -143,9 +144,18 @@ export const LoginPage = ({
           </div>
 
           <div className="anime-field">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Password
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Password
+              </label>
+              <button
+                type="button"
+                onClick={onSwitchToForgotPassword}
+                className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Forgot password?
+              </button>
+            </div>
             <div className="relative">
               <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
               <input

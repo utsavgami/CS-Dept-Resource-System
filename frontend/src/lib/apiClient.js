@@ -86,6 +86,9 @@ export const api = {
   login: (data) => fetchWithAuth('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   sendOtp: (data) => fetchWithAuth('/auth/send-otp', { method: 'POST', body: JSON.stringify(data) }),
   verifyOtp: (data) => fetchWithAuth('/auth/verify-otp', { method: 'POST', body: JSON.stringify(data) }),
+  forgotPasswordSendOtp: (data) => fetchWithAuth('/auth/forgot-password/send-otp', { method: 'POST', body: JSON.stringify(data) }),
+  forgotPasswordVerifyOtp: (data) => fetchWithAuth('/auth/forgot-password/verify-otp', { method: 'POST', body: JSON.stringify(data) }),
+  resetPassword: (data) => fetchWithAuth('/auth/forgot-password/reset', { method: 'POST', body: JSON.stringify(data) }),
   getMe: () => fetchWithAuth('/auth/me'),
 
   // Users
