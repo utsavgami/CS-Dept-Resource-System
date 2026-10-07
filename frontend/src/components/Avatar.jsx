@@ -24,19 +24,19 @@ function toneForName(name = '') {
 
 // src: a URL (uploaded avatar path, or an objectURL preview of a picked file).
 // name: used both for initials and to pick a deterministic gradient tone.
-export const Avatar = ({ src, name, size = 'w-24 h-24', textSize = 'text-2xl', ringClassName = 'border-blue-500/20' }) => {
+export const Avatar = ({ src, name, size = 'w-24 h-24', textSize = 'text-2xl', ringClassName = 'border-blue-500/20', borderClassName = 'border-4' }) => {
   if (src) {
     return (
       <img
         src={src}
         alt={name || 'Profile photo'}
-        className={`${size} rounded-full object-cover border-4 ${ringClassName} shadow-md transition-transform duration-200 hover:scale-105`}
+        className={`${size} rounded-full object-cover ${borderClassName} ${ringClassName} shadow-md transition-transform duration-200 hover:scale-105`}
       />
     );
   }
   return (
     <div
-      className={`${size} rounded-full border-4 ${ringClassName} shadow-md bg-gradient-to-br ${toneForName(name)} flex items-center justify-center text-white font-black ${textSize} transition-transform duration-200 hover:scale-105`}
+      className={`${size} rounded-full ${borderClassName} ${ringClassName} shadow-md bg-gradient-to-br ${toneForName(name)} flex items-center justify-center text-white font-black ${textSize} transition-transform duration-200 hover:scale-105`}
       aria-label={name || 'Profile photo'}
     >
       {getInitials(name)}

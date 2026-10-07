@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Avatar } from './Avatar';
 import { api } from '../lib/apiClient';
 import {
   Search,
@@ -256,10 +257,13 @@ export const ExploreItemsPage = ({
                 </div>
 
                 <div className="flex items-center space-x-2">
-                  <img
-                    src={item.ownerAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.ownerName}`}
-                    alt={item.ownerName}
-                    className="w-6 h-6 rounded-full border border-slate-300 dark:border-slate-700 object-cover"
+                  <Avatar
+                    src={item.ownerAvatar}
+                    name={item.ownerName}
+                    size="w-6 h-6"
+                    textSize="text-[9px]"
+                    borderClassName="border"
+                    ringClassName="border-slate-300 dark:border-slate-700"
                   />
                   <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                     {item.ownerName.split(' ')[0]}

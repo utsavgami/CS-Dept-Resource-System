@@ -99,7 +99,10 @@ apiRouter.post('/auth/send-otp', async (req, res) => {
     }
 
     const otpCode = String(Math.floor(100000 + Math.random() * 900000));
-    await emailOtps.create(emailValue, otpCode, 'register', 10);
+    await emailOtps.create(emailValue, otpCode, 'register', 1);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[DEV] register OTP for ${emailValue}: ${otpCode}`);
+    }
 
     try {
       await sendOtpEmail(emailValue, otpCode);
@@ -108,7 +111,7 @@ apiRouter.post('/auth/send-otp', async (req, res) => {
       return res.status(500).json({ error: 'Could not send verification email. Please try again in a moment.' });
     }
 
-    return res.json({ message: 'A 6-digit code has been sent to your email. It is valid for 10 minutes.' });
+    return res.json({ message: 'A 6-digit code has been sent to your email. It is valid for 1 minute.' });
   } catch (err) {
     console.error('send-otp error:', err);
     return res.status(500).json({ error: 'Could not send OTP' });
@@ -285,7 +288,10 @@ apiRouter.post('/auth/forgot-password/send-otp', async (req, res) => {
     }
 
     const otpCode = String(Math.floor(100000 + Math.random() * 900000));
-    await emailOtps.create(emailValue, otpCode, 'reset', 10);
+    await emailOtps.create(emailValue, otpCode, 'reset', 1);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[DEV] reset OTP for ${emailValue}: ${otpCode}`);
+    }
 
     try {
       await sendOtpEmail(emailValue, otpCode, 'reset');
@@ -294,7 +300,7 @@ apiRouter.post('/auth/forgot-password/send-otp', async (req, res) => {
       return res.status(500).json({ error: 'Could not send verification email. Please try again in a moment.' });
     }
 
-    return res.json({ message: 'A 6-digit code has been sent to your email. It is valid for 10 minutes.' });
+    return res.json({ message: 'A 6-digit code has been sent to your email. It is valid for 1 minute.' });
   } catch (err) {
     console.error('forgot-password send-otp error:', err);
     return res.status(500).json({ error: 'Could not send OTP' });
@@ -448,14 +454,20 @@ apiRouter.post('/items', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Please provide all required item details' });
     }
 
+    if (!Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({ error: 'Please upload at least one image of the item' });
+    }
+
+    if (!images.every((img) => typeof img === 'string' && /^data:image\/(jpeg|png|webp|gif);base64,/.test(img))) {
+      return res.status(400).json({ error: 'Only uploaded image files (JPG, PNG, WEBP, GIF) are allowed' });
+    }
+
     const newItem = await items.create({
       ownerId: user._id,
       title,
       category,
       description,
-      images: Array.isArray(images) && images.length > 0
-        ? images
-        : ['https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=800'],
+      images,
       rentPricePerDay: Number(rentPricePerDay),
       securityDeposit: Number(securityDeposit || 0),
       condition: condition || 'Good',
@@ -1214,11 +1226,33 @@ apiRouter.post('/ratings', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Student to rate not found' });
     }
 
+    const starsNum = Number(stars);
+    if (!Number.isInteger(starsNum) || starsNum < 1 || starsNum > 5) {
+      return res.status(400).json({ error: 'Star rating must be a whole number from 1 to 5' });
+    }
+
+    if (String(revieweeId) === String(reviewer._id)) {
+      return res.status(400).json({ error: 'You cannot rate yourself' });
+    }
+
+    // Only the two people on a booking can rate each other, once per booking.
+    const booking = await bookings.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+    const parties = [String(booking.borrowerId), String(booking.ownerId)];
+    if (!parties.includes(String(reviewer._id)) || !parties.includes(String(revieweeId))) {
+      return res.status(403).json({ error: 'You can only rate the other person on your own booking' });
+    }
+    if (await ratings.existsForBooking(bookingId, reviewer._id)) {
+      return res.status(409).json({ error: 'You have already rated this booking' });
+    }
+
     const newRating = await ratings.create({
       bookingId,
       revieweeId,
       reviewerId: reviewer._id,
-      stars: Number(stars),
+      stars: starsNum,
       comment: comment || 'Great CS resource exchange!'
     });
 

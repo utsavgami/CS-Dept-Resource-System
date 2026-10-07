@@ -81,8 +81,8 @@ export const users = {
     const id = genId(role === 'admin' ? 'usr_admin' : 'usr_std');
     return queryOne(
       `INSERT INTO users
-         (id, name, email, password_hash, enrollment_number, mobile_number, department, semester, role, avatar)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         (id, name, email, password_hash, enrollment_number, mobile_number, department, semester, role, avatar, average_rating, total_ratings)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,0)
        RETURNING *`,
       [id, name, email, passwordHash, enrollmentNumber, mobileNumber, department, semester, role, avatar]
     );
@@ -614,7 +614,15 @@ export const complaints = {
 // RATINGS
 // ----------------------------------------------------
 export const ratings = {
-  findForUser: (userId) => queryRows('SELECT * FROM ratings WHERE reviewee_id = $1 ORDER BY created_at DESC', [userId]),
+  findForUser: (userId) =>
+    queryRows(
+      `SELECT r.*, u.name AS reviewer_name, u.avatar AS reviewer_avatar
+       FROM ratings r
+       LEFT JOIN users u ON u.id = r.reviewer_id
+       WHERE r.reviewee_id = $1
+       ORDER BY r.created_at DESC`,
+      [userId]
+    ),
 
   create: async ({ bookingId, revieweeId, reviewerId, stars, comment }) => {
     const id = genId('rtg');
@@ -630,10 +638,19 @@ export const ratings = {
 
   averageForUser: async (userId) => {
     const row = await queryOne(
-      'SELECT COALESCE(AVG(stars), 5.0)::numeric(3,2) AS avg, COUNT(*)::int AS total FROM ratings WHERE reviewee_id = $1',
+      'SELECT COALESCE(AVG(stars), 0)::numeric(3,2) AS avg, COUNT(*)::int AS total FROM ratings WHERE reviewee_id = $1',
       [userId]
     );
     return { averageRating: Number(row.avg), totalRatings: row.total };
+  },
+
+  // True if this reviewer has already rated this booking (one rating per booking).
+  existsForBooking: async (bookingId, reviewerId) => {
+    const row = await queryOne(
+      'SELECT 1 AS found FROM ratings WHERE booking_id = $1 AND reviewer_id = $2 LIMIT 1',
+      [bookingId, reviewerId]
+    );
+    return Boolean(row);
   }
 };
 
@@ -664,7 +681,7 @@ export const notifications = {
 // from being usable to reset an unrelated account's password, and vice versa.
 export const emailOtps = {
   // Replaces any pending OTP for this email+purpose with a fresh one.
-  create: async (email, otpCode, purpose = 'register', expiresInMinutes = 10) => {
+  create: async (email, otpCode, purpose = 'register', expiresInMinutes = 1) => {
     await pool.query('DELETE FROM email_otps WHERE email = $1 AND purpose = $2', [email, purpose]);
     const id = genId('otp');
     const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);

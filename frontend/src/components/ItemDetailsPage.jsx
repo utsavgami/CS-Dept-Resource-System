@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { Avatar } from './Avatar';
 import { api, addToRecentlyViewed } from "../lib/apiClient";
 import {
   ArrowLeft,
@@ -39,6 +40,7 @@ export const ItemDetailsPage = ({
   onBack,
   onBookingSuccess,
   onRequireLogin,
+  onViewOwner,
 }) => {
   const [selectedImage, setSelectedImage] = useState(item.images[0] || "");
   const [startDate, setStartDate] = useState(() => {
@@ -142,6 +144,12 @@ export const ItemDetailsPage = ({
     } catch {
       // ignore
     }
+  };
+
+  // Open the owner's full public profile page.
+  const openOwnerProfile = () => {
+    const id = ownerData?._id || item.ownerId;
+    if (id && onViewOwner) onViewOwner(id);
   };
 
   // Calculate rental days & cost
@@ -343,14 +351,26 @@ export const ItemDetailsPage = ({
             </h3>
 
             <div className="profile-identity flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-              <div className="flex items-center space-x-3">
-                <img
-                  src={
-                    item.ownerAvatar ||
-                    `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.ownerName}`
+              <div
+                role="button"
+                tabIndex={0}
+                title="View full profile"
+                onClick={openOwnerProfile}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    openOwnerProfile();
                   }
-                  alt={item.ownerName}
-                  className="w-12 h-12 rounded-full object-cover border border-slate-200 dark:border-slate-700 transition-transform duration-200 hover:scale-105"
+                }}
+                className="group flex items-center space-x-3 cursor-pointer"
+              >
+                <Avatar
+                  src={item.ownerAvatar}
+                  name={item.ownerName}
+                  size="w-12 h-12"
+                  textSize="text-base"
+                  borderClassName="border"
+                  ringClassName="border-slate-200 dark:border-slate-700"
                 />
                 <div>
                   <h4 className="font-bold text-sm text-slate-900 dark:text-white">
@@ -369,16 +389,19 @@ export const ItemDetailsPage = ({
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {item.ownerSemester || "CS Student"} • Computer Science Dept
                   </p>
+                  <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-1 group-hover:underline">
+                    View full profile →
+                  </p>
                 </div>
               </div>
 
               <div className="text-right">
                 <div className="flex items-center space-x-1 text-amber-500 font-bold text-sm justify-end">
                   <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-                  <span>{ownerData?.averageRating || 5.0}</span>
+                  <span>{Number(ownerData?.averageRating) > 0 ? Number(ownerData.averageRating).toFixed(1) : 0}</span>
                 </div>
                 <p className="text-[10px] text-slate-400 font-medium">
-                  {ownerData?.totalRatings || ownerRatings.length} Peer Reviews
+                  {ownerData?.totalRatings ?? ownerRatings.length} Peer Reviews
                 </p>
               </div>
             </div>

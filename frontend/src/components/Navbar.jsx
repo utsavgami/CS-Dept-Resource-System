@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Avatar } from './Avatar';
 import { api } from '../lib/apiClient';
 import {
   Laptop,
@@ -242,10 +243,13 @@ const markRead = async (id, link) => {
                   onClick={() => setActiveTab('profile')}
                   className="flex items-center space-x-2 text-left hover:opacity-80 transition"
                 >
-                  <img
-                    src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name}`}
-                    alt={user.name}
-                    className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 object-cover"
+                  <Avatar
+                    src={user.avatar}
+                    name={user.name}
+                    size="w-8 h-8"
+                    textSize="text-[11px]"
+                    borderClassName="border"
+                    ringClassName="border-slate-200 dark:border-slate-700"
                   />
                   <div className="hidden md:block">
                     <p className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">

@@ -154,7 +154,7 @@ export const ProfilePage = ({ currentUser, onUserUpdated, setActiveTab }) => {
             <div>
               <StatCard
                 icon={<Star className="w-5 h-5 fill-amber-400 text-amber-500" />}
-                value={currentUser.averageRating || 5.0}
+                value={Number(currentUser.averageRating) > 0 ? Number(currentUser.averageRating).toFixed(1) : 0}
                 tone="text-amber-500"
               />
               <p className="text-[11px] text-slate-400 font-medium mt-1.5">Peer Rating</p>

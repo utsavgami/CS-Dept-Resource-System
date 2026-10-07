@@ -30,6 +30,12 @@ export function setStoredUser(user) {
   }
 }
 
+// A plain fetch() with no server response (slow/blocked network, backend
+// hung on something like a slow SMTP connection) waits indefinitely — this
+// is why "Send OTP" could look permanently stuck. Aborting after 20s turns
+// that into a clear, actionable error instead of an endless spinner.
+const REQUEST_TIMEOUT_MS = 20000;
+
 async function fetchWithAuth(endpoint, options = {}) {
   const token = getAuthToken();
   const headers = {
@@ -41,10 +47,24 @@ async function fetchWithAuth(endpoint, options = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out. Please check your connection and try again.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   const data = await response.json();
 
@@ -65,11 +85,25 @@ async function fetchWithAuthFile(endpoint, formData) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    method: 'POST',
-    headers,
-    body: formData
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'POST',
+      headers,
+      body: formData,
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out. Please check your connection and try again.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   const data = await response.json();
 

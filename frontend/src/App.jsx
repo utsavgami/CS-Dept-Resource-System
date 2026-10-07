@@ -13,6 +13,7 @@ import { MyBookingsPage } from './components/MyBookingsPage';
 import { MessagesPage } from './components/MessagesPage';
 import { ComplaintsPage } from './components/ComplaintsPage';
 import { ProfilePage } from './components/ProfilePage';
+import { OwnerProfilePage } from './components/OwnerProfilePage';
 import { FavoritesPage } from './components/FavoritesPage';
 import { AdminDashboardPage } from './components/AdminDashboardPage';
 import { DocsPage } from './components/DocsPage';
@@ -24,6 +25,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getStoredUser());
   const [activeTab, setActiveTab] = useState('home');
   const [selectedItem, setSelectedItem] = useState(null);
+  const [viewedUserId, setViewedUserId] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [chatBookingId, setChatBookingId] = useState(undefined);
   const [complaintBooking, setComplaintBooking] = useState(null);
@@ -79,6 +81,11 @@ export default function App() {
   const handleSelectItem = (item) => {
     setSelectedItem(item);
     setActiveTab('item-details');
+  };
+
+  const handleViewUser = (userId) => {
+    setViewedUserId(userId);
+    setActiveTab('user-profile');
   };
 
   const handleOpenChatForBooking = (bookingId) => {
@@ -145,6 +152,17 @@ export default function App() {
             onBack={() => setActiveTab('explore')}
             onBookingSuccess={() => setActiveTab('bookings')}
             onRequireLogin={() => setActiveTab('login')}
+            onViewOwner={handleViewUser}
+          />
+        )}
+
+        {/* Another student's public profile */}
+        {activeTab === 'user-profile' && viewedUserId && (
+          <OwnerProfilePage
+            userId={viewedUserId}
+            currentUser={currentUser}
+            onBack={() => setActiveTab(selectedItem ? 'item-details' : 'explore')}
+            onOpenItem={handleSelectItem}
           />
         )}
 

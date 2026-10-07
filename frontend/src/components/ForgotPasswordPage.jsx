@@ -158,7 +158,7 @@ export const ForgotPasswordPage = ({ onSuccess, onSwitchToLogin }) => {
       setOtpCode('');
       setOtpMessage(res.message || 'OTP sent to your email.');
       setOtpMessageType('success');
-      setResendCooldown(30);
+      setResendCooldown(60); // matches the OTP's 1-minute validity
     } catch (err) {
       setOtpMessage(err.message || 'Could not send OTP');
       setOtpMessageType('error');

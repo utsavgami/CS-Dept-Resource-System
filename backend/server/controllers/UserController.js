@@ -22,19 +22,42 @@ export const UserController = {
       const user = await UserModel.findById(req.params.id);
       if (!user) return res.status(404).json({ error: 'User not found' });
 
-      const [userRatings, listings, borrowedBookings] = await Promise.all([
+      const [userRatings, listings, borrowedBookings, lentBookings] = await Promise.all([
         ratings.findForUser(user._id),
         ItemModel.findByOwnerId(user._id),
-        bookings.findByBorrower(user._id)
+        bookings.findByBorrower(user._id),
+        bookings.findByOwner(user._id)
       ]);
 
+      // Completed borrows = items this user rented from others.
+      // Completed lends   = this user's own items that others rented and returned.
       const borrowedCount = borrowedBookings.filter((b) => b.status === 'Completed').length;
+      const lentCount = lentBookings.filter((b) => b.status === 'Completed').length;
+
+      // Public-safe view: other students must never receive email, phone,
+      // password hash or admin-only flags — only what a profile page needs.
+      const publicUser = {
+        _id: user._id,
+        name: user.name,
+        avatar: user.avatar,
+        department: user.department,
+        semester: user.semester,
+        role: user.role,
+        enrollmentNumber: user.enrollmentNumber,
+        verified: user.verified,
+        averageRating: user.averageRating,
+        totalRatings: user.totalRatings,
+        createdAt: user.createdAt
+      };
+      const publicListings = listings.map(({ ownerEmail, ownerPhone, ...rest }) => rest);
 
       return res.json({
-        user: { ...user, passwordHash: undefined },
+        user: publicUser,
         listingsCount: listings.length,
         borrowedCount,
-        ratings: userRatings
+        lentCount,
+        ratings: userRatings,
+        listings: publicListings
       });
     } catch (err) {
       console.error('getProfile error:', err);

@@ -59,12 +59,8 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
     }
   };
 
-  const [images, setImages] = useState(
-    editingItem?.images || [
-      "https://images.unsplash.com/photo-1587145820266-a5951ee6f620?auto=format&fit=crop&q=80&w=800",
-    ],
-  );
-  const [newImageUrl, setNewImageUrl] = useState("");
+  const [images, setImages] = useState(editingItem?.images || []);
+  const [imageError, setImageError] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -80,59 +76,54 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
     "Other",
   ];
 
-  const presetImages = [
-    {
-      label: "TI Graphing Calculator",
-      url: "https://images.unsplash.com/photo-1587145820266-a5951ee6f620?auto=format&fit=crop&q=80&w=800",
-    },
-    {
-      label: "Raspberry Pi 4 Board",
-      url: "https://images.unsplash.com/photo-1629654297299-c8506221ca97?auto=format&fit=crop&q=80&w=800",
-    },
-    {
-      label: "Algorithms CS Textbook",
-      url: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=800",
-    },
-    {
-      label: "Digital Oscilloscope Lab",
-      url: "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&q=80&w=800",
-    },
-    {
-      label: "Arduino Circuit Board",
-      url: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=80&w=800",
-    },
-  ];
-
-  const handleAddImage = () => {
-    if (newImageUrl.trim()) {
-      setImages((prev) => [...prev, newImageUrl.trim()]);
-      setNewImageUrl("");
-    }
-  };
-
   const handleRemoveImage = (index) => {
     setImages((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
   const handleFileUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === "string") {
-          setImages((prev) => [...prev, reader.result]);
-        }
-      };
-      reader.readAsDataURL(file);
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setImageError("Only image files (JPG, PNG, WEBP or GIF) are allowed.");
+      return;
     }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setImageError("Image is too large. Please choose a photo under 5 MB.");
+      return;
+    }
+
+    setImageError("");
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === "string") {
+        setImages((prev) => [...prev, reader.result]);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setImageError("");
 
     if (!title || !description || !rentPricePerDay || !pickupLocation) {
       setError("Please fill in all required fields");
+      return;
+    }
+
+    if (images.length === 0) {
+      const msg =
+        "Please upload at least one photo of your item. A listing cannot be added without an image and all required details.";
+      setImageError(msg);
+      setError(msg);
+      window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
 
@@ -142,12 +133,7 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
         title,
         category,
         description,
-        images:
-          images.length > 0
-            ? images
-            : [
-                "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=800",
-              ],
+        images,
         bill: bill || undefined,
         rentPricePerDay: Number(rentPricePerDay),
         securityDeposit: Number(securityDeposit || 0),
@@ -316,8 +302,14 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
           {/* Image Upload / URLs */}
           <div className="space-y-3">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-              Listing Images (Cloudinary / File / URL)
+              Listing Images * (JPG, PNG, WEBP or GIF · max 5 MB each)
             </label>
+
+            {imageError && (
+              <p className="text-xs font-semibold text-red-600 dark:text-red-400">
+                {imageError}
+              </p>
+            )}
 
             <div className="flex flex-wrap gap-2">
               {images.map((img, idx) => (
@@ -394,7 +386,7 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
                   Add Bill
                 </button>
 
-                <label className="px-4 py-2 bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300 rounded-xl font-bold text-xs cursor-pointer hover:bg-blue-100 flex items-center justify-center space-x-1">
+                <label className="px-4 py-2 bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300 rounded-xl font-bold text-xs cursor-pointer hover:bg-blue-700 flex items-center justify-center space-x-1">
                   <Upload className="w-3.5 h-3.5" />
                   <span>Upload Bill</span>
 
@@ -415,47 +407,16 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
 
             {/* Quick Presets or File Upload */}
             <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
-                value={newImageUrl}
-                onChange={(e) => setNewImageUrl(e.target.value)}
-                placeholder="Paste Image URL or select preset below..."
-                className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs"
-              />
-              {/* <button
-                type="button"
-                onClick={handleAddImage}
-                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-xs hover:bg-slate-200"
-              >
-                Add URL
-              </button> */}
-              <label className="px-4 py-2 bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300 rounded-xl font-bold text-xs cursor-pointer hover:bg-blue-100 flex items-center justify-center space-x-1">
+              <label className="px-4 py-2 bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300 rounded-xl font-bold text-xs cursor-pointer hover:bg-blue-700 flex items-center justify-center space-x-1">
                 <Upload className="w-3.5 h-3.5" />
-                <span>Upload File</span>
+                <span>Upload Photo</span>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
                   onChange={handleFileUpload}
                   className="hidden"
                 />
               </label>
-            </div>
-
-            {/* Presets */}
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              <span className="text-[10px] text-slate-400 font-semibold self-center mr-1">
-                Sample Photos:
-              </span>
-              {presetImages.map((p) => (
-                <button
-                  key={p.label}
-                  type="button"
-                  onClick={() => setImages([p.url])}
-                  className="text-[10px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded-lg"
-                >
-                  {p.label}
-                </button>
-              ))}
             </div>
           </div>
 
@@ -470,7 +431,7 @@ export const AddItemPage = ({ onSuccess, onCancel, editingItem }) => {
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition flex items-center space-x-2"
+              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-lg shadow-blue-700/30 transition flex items-center space-x-2"
             >
               <PlusCircle className="w-4 h-4" />
               <span>

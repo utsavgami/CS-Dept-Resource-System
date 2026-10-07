@@ -4,6 +4,11 @@ import nodemailer from 'nodemailer';
 // shared alongside this feature. For Gmail: host smtp.gmail.com, port 587,
 // secure=false, and an App Password (not your normal Gmail password) as
 // SMTP_PASS. Gmail App Passwords require 2-Step Verification to be on.
+// Nodemailer's default connection timeout is ~2 minutes, which is why a
+// blocked/slow network (common on campus/office WiFi, which often blocks
+// outbound SMTP ports) made Send OTP look "stuck" instead of failing fast.
+// These shorter timeouts make a bad connection fail within ~10s so the
+// person sees a clear error instead of an endless spinner.
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 587),
@@ -11,7 +16,10 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
-  }
+  },
+  connectionTimeout: 10000, // time to establish the TCP connection
+  greetingTimeout: 10000,   // time to wait for the SMTP server's greeting
+  socketTimeout: 10000      // time to wait on an idle socket mid-transfer
 });
 
 // purpose: 'register' | 'reset' — only changes the subject/copy, not the
@@ -28,10 +36,10 @@ export async function sendOtpEmail(toEmail, otp, purpose = 'register') {
     : 'Use the code below to verify your email and finish creating your account.';
 
   const safetyNote = isReset
-    ? "This code expires in 10 minutes. If you didn't request a password reset, you can safely ignore this email — your password won't change."
-    : "This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.";
+    ? "This code expires in 1 minute. If you didn't request a password reset, you can safely ignore this email — your password won't change."
+    : "This code expires in 1 minute. If you didn't request this, you can safely ignore this email.";
 
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from: process.env.SMTP_FROM || process.env.SMTP_USER,
     to: toEmail,
     subject,
@@ -45,4 +53,10 @@ export async function sendOtpEmail(toEmail, otp, purpose = 'register') {
       </div>
     `
   });
+
+  // Gmail ka jawab terminal mein dikhao taaki pata chale mail kahan tak gayi.
+  console.log(
+    `[mail] to=${toEmail} accepted=${JSON.stringify(info.accepted)} rejected=${JSON.stringify(info.rejected)} response="${info.response}"`
+  );
+  return info;
 }
