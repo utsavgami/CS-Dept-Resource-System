@@ -14,6 +14,16 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Behind a proxy (nginx, Render, Railway, ...) every request would look like it
+  // comes from the proxy's IP, so rate limits would treat all students as one.
+  // Set TRUST_PROXY=1 in .env on the server (number of proxies in front of the app).
+  // Leave it unset when running directly (e.g. on your laptop): trusting the header
+  // without a proxy would let anyone fake their IP and dodge the limits.
+  if (process.env.TRUST_PROXY) {
+    const hops = Number(process.env.TRUST_PROXY);
+    app.set('trust proxy', Number.isInteger(hops) ? hops : process.env.TRUST_PROXY);
+  }
+
   // Quick startup check so the terminal shows whether Postgres actually connected.
   try {
     const result = await pool.query('SELECT NOW()');
