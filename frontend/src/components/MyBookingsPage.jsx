@@ -339,8 +339,8 @@ export const MyBookingsPage = ({
                     </button>
                   )}
 
-                  {/* Complete Rental button */}
-                  {b.status === 'Accepted' && (
+                  {/* Complete Rental button — owner only (server enforces this too) */}
+                  {isOwner && b.status === 'Accepted' && (
                     <button
                       onClick={() => handleUpdateStatus(b._id, 'Completed')}
                       className="px-3 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition"

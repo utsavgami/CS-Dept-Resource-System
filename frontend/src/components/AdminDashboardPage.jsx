@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/apiClient';
+import { ProofLink } from './ProofViewer';
 import {
   ShieldCheck,
   Users,
@@ -208,9 +209,9 @@ export const AdminDashboardPage = () => {
                     <td className="p-3 max-w-xs truncate">{c.description}</td>
                     <td className="p-3">
                       {c.proofUrl ? (
-                        <a href={c.proofUrl} target="_blank" rel="noreferrer" className="text-blue-600 underline font-semibold">
+                        <ProofLink url={c.proofUrl} className="text-blue-600 underline font-semibold">
                           View Image
-                        </a>
+                        </ProofLink>
                       ) : 'No Proof'}
                     </td>
                     <td className="p-3">

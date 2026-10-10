@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { api } from '../lib/apiClient';
+import { api, getAuthToken } from '../lib/apiClient';
 import { io } from 'socket.io-client';
 import { MessageSquare, Send, Sparkles, ShieldCheck, Plus, Search, X } from 'lucide-react';
 
@@ -54,7 +54,7 @@ export const MessagesPage = ({
     window.addEventListener('open-chat', onOpenChat);
 
     // Connect Socket.io client (booking chats are real-time)
-    const socket = io();
+    const socket = io({ auth: { token: getAuthToken() } });
     socketRef.current = socket;
 
     socket.on('receive_chat_message', (newMsg) => {

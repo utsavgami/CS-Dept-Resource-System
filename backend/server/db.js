@@ -120,6 +120,11 @@ export const users = {
   setPassword: (id, passwordHash) =>
     queryOne('UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1 RETURNING *', [id, passwordHash]),
 
+  // Invalidates every login token issued so far for this user (used on logout
+  // and password reset). Tokens carry the version they were issued under.
+  bumpTokenVersion: (id) =>
+    queryOne('UPDATE users SET token_version = token_version + 1, updated_at = now() WHERE id = $1 RETURNING *', [id]),
+
   setComplaintCount: (id, count) =>
     queryOne('UPDATE users SET complaint_count = $2, updated_at = now() WHERE id = $1 RETURNING *', [id, count]),
 
@@ -336,6 +341,18 @@ export const bookings = {
   // expiry race to worry about.
   updateStatus: async (id, status) => {
     await pool.query('UPDATE bookings SET status = $2, updated_at = now() WHERE id = $1', [id, status]);
+    return bookings.findById(id);
+  },
+
+  // Atomic status change that only applies if the booking is currently in
+  // `fromStatus`. Returns the updated booking, or null if it wasn't in that
+  // state (so two quick clicks / a forged request can't skip stages).
+  updateStatusIf: async (id, fromStatus, toStatus) => {
+    const result = await pool.query(
+      'UPDATE bookings SET status = $3, updated_at = now() WHERE id = $1 AND status = $2 RETURNING id',
+      [id, fromStatus, toStatus]
+    );
+    if (result.rowCount === 0) return null;
     return bookings.findById(id);
   },
 
@@ -561,18 +578,42 @@ export const complaints = {
 
   findById: (id) => queryOne(`${COMPLAINT_SELECT} WHERE c.id = $1`, [id]),
 
-  // Rejected complaints (dismissed by admin as fake) don't count toward
-  // the auto-block threshold.
-  countByReportedUser: async (userId) =>
-    (await queryOne(`SELECT COUNT(*)::int AS count FROM complaints WHERE reported_user_id = $1 AND status != 'Rejected'`, [userId])).count,
+  // Used to decide who may open a proof file (reporter, reported student or admin).
+  findByProofUrl: (proofUrl) => queryOne(`${COMPLAINT_SELECT} WHERE c.proof_url = $1 LIMIT 1`, [proofUrl]),
 
-  // Public view for the item page: only non-rejected complaints, and no
-  // reporter / proof / admin note — just what the complaint was about.
+  // Only complaints the admin has verified (status 'Resolved') count toward
+  // the auto-block threshold, and each reporter counts once — so neither
+  // fresh unverified complaints nor one person filing many can block anyone.
+  countByReportedUser: async (userId) =>
+    (await queryOne(
+      `SELECT COUNT(DISTINCT reporter_id)::int AS count
+         FROM complaints WHERE reported_user_id = $1 AND status = 'Resolved'`,
+      [userId]
+    )).count,
+
+  // Has this reporter already got a live (not rejected) complaint against
+  // this user for this booking (or, with no booking, in general)?
+  existsActive: async (reporterId, reportedUserId, bookingId) =>
+    !!(await queryOne(
+      `SELECT 1 FROM complaints
+        WHERE reporter_id = $1 AND reported_user_id = $2
+          AND booking_id IS NOT DISTINCT FROM $3
+          AND status != 'Rejected'
+        LIMIT 1`,
+      [reporterId, reportedUserId, bookingId || null]
+    )),
+
+  // Public view for the item page: only complaints the admin has verified
+  // (Resolved), one per reporter (their latest) so the number shown matches
+  // the complaint count used for auto-block. No reporter / proof / admin note.
   findPublicAgainst: (userId) =>
     queryRows(
-      `SELECT id, type, description, status, created_at
-       FROM complaints
-       WHERE reported_user_id = $1 AND status != 'Rejected'
+      `SELECT id, type, description, status, created_at FROM (
+         SELECT DISTINCT ON (reporter_id) id, type, description, status, created_at
+           FROM complaints
+          WHERE reported_user_id = $1 AND status = 'Resolved'
+          ORDER BY reporter_id, created_at DESC
+       ) latest
        ORDER BY created_at DESC`,
       [userId]
     ),
@@ -699,17 +740,45 @@ export const emailOtps = {
       [email, purpose]
     ),
 
+  // Marks the OTP verified and gives the user a 15-minute window to finish
+  // registering / resetting the password (the 1-minute OTP expiry no longer
+  // applies once the code has been proven correct).
   markVerified: (email, purpose = 'register') =>
-    pool.query('UPDATE email_otps SET verified = true WHERE email = $1 AND purpose = $2', [email, purpose]),
+    pool.query(
+      'UPDATE email_otps SET verified = true, expires_at = $3 WHERE email = $1 AND purpose = $2',
+      [email, purpose, new Date(Date.now() + 15 * 60 * 1000)]
+    ),
+
+  // Counts one wrong guess against this OTP row; returns the new total.
+  incrementAttempts: async (id) => {
+    const row = await queryOne(
+      'UPDATE email_otps SET attempts = attempts + 1 WHERE id = $1 RETURNING attempts',
+      [id]
+    );
+    return row ? Number(row.attempts) : 0;
+  },
+
+  // Seconds since the last OTP was sent to this email for this purpose
+  // (null if none). Computed in SQL so it doesn't depend on timezones.
+  secondsSinceLastSent: async (email, purpose = 'register') => {
+    const { rows } = await pool.query(
+      `SELECT EXTRACT(EPOCH FROM (NOW() - created_at)) AS age
+         FROM email_otps WHERE email = $1 AND purpose = $2
+         ORDER BY created_at DESC LIMIT 1`,
+      [email, purpose]
+    );
+    return rows.length ? Number(rows[0].age) : null;
+  },
 
   // Has this email completed OTP verification for this purpose, not yet
-  // consumed? (Row is deleted once the account is created / password reset.)
+  // consumed and not past its post-verification window? (Row is deleted once
+  // the account is created / password reset.)
   isVerified: async (email, purpose = 'register') => {
     const row = await queryOne(
       'SELECT * FROM email_otps WHERE email = $1 AND purpose = $2 AND verified = true',
       [email, purpose]
     );
-    return !!row;
+    return !!row && new Date(row.expiresAt) > new Date();
   },
 
   deleteByEmail: (email, purpose = 'register') =>

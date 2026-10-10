@@ -1,5 +1,9 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import {
   users,
@@ -19,7 +23,156 @@ import { createUserRouter } from './routes/userRoutes.js';
 import { proofUpload } from './middleware/upload.js';
 import { sendOtpEmail } from './mailer.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'cs_department_jwt_secret_key_2026';
+// No fallback on purpose: a hard-coded secret means anyone with the source can
+// forge login tokens. The server refuses to start without a strong one.
+// Generate one with:  node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+export const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+  console.error('[Security] JWT_SECRET is missing or shorter than 32 characters. Set a long random value in backend/.env and restart.');
+  process.exit(1);
+}
+
+// ---- Login tokens ----
+// Lifetime of a login (override with JWT_EXPIRES_IN in .env, e.g. 12h or 3d).
+const TOKEN_LIFETIME = process.env.JWT_EXPIRES_IN || '3d';
+
+// Every token carries the user's current token version ("tv"). Logging out or
+// resetting the password bumps that version, which kills all older tokens at once.
+export function signToken(user) {
+  return jwt.sign({ userId: user._id, role: user.role, tv: user.tokenVersion ?? 0 }, JWT_SECRET, { expiresIn: TOKEN_LIFETIME });
+}
+// Tokens issued before this feature have no "tv" and count as version 0.
+export function tokenIsCurrent(decoded, user) {
+  return (decoded.tv ?? 0) === (user.tokenVersion ?? 0);
+}
+
+// ---- OTP hardening ----
+const OTP_MAX_ATTEMPTS = 5;          // wrong guesses before the code is burned
+const OTP_RESEND_COOLDOWN_SECONDS = 60;
+
+// Cryptographically secure 6-digit code (Math.random is predictable).
+const generateOtp = () => String(crypto.randomInt(100000, 1000000));
+
+function safeEqual(a, b) {
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
+// Shared by both verify-otp routes. Returns an error string or null on success.
+async function checkOtpGuess(emailValue, purpose, guess) {
+  const record = await emailOtps.findLatestByEmail(emailValue, purpose);
+  if (!record) return 'No OTP found for this email. Please request a new one.';
+  if (new Date(record.expiresAt) < new Date()) return 'This OTP has expired. Please request a new one.';
+  if (Number(record.attempts) >= OTP_MAX_ATTEMPTS) return 'Too many wrong attempts. Please request a new OTP.';
+  if (!safeEqual(record.otpCode, String(guess).trim())) {
+    const used = await emailOtps.incrementAttempts(record._id);
+    return used >= OTP_MAX_ATTEMPTS
+      ? 'Too many wrong attempts. Please request a new OTP.'
+      : 'Incorrect OTP. Please check and try again.';
+  }
+  return null;
+}
+
+// Returns seconds left to wait before another OTP may be sent, or 0.
+async function otpCooldownLeft(emailValue, purpose) {
+  const age = await emailOtps.secondsSinceLastSent(emailValue, purpose);
+  if (age === null || age >= OTP_RESEND_COOLDOWN_SECONDS) return 0;
+  return Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - age);
+}
+
+// ---- Input validation helpers (Step 3) ----
+// Password: 8-72 characters (72 is bcrypt's limit), at least one letter and one number.
+function passwordProblem(pw) {
+  const value = String(pw ?? '');
+  if (value.length < 8) return 'Password must be at least 8 characters long';
+  if (value.length > 72) return 'Password must be at most 72 characters long';
+  if (!/[A-Za-z]/.test(value) || !/\d/.test(value)) return 'Password must contain at least one letter and one number';
+  return null;
+}
+
+// Chat / direct message text: a non-empty string, at most 2000 characters.
+function cleanMessage(content) {
+  if (typeof content !== 'string') return null;
+  const text = content.trim();
+  return text && text.length <= 2000 ? text : null;
+}
+
+const ITEM_CATEGORIES = ['Books', 'Calculators', 'Laptop Accessories', 'Electronics', 'Lab Equipment', 'Project Components', 'Sports Items', 'Other'];
+const ITEM_CONDITIONS = ['New', 'Like New', 'Good', 'Fair'];
+const MAX_ITEM_IMAGES = 5;
+const MAX_IMAGE_DATA_LENGTH = 7000000; // ~5 MB photo once base64-encoded (matches the 5 MB upload limit in the form)
+
+// Validates item fields for create (partial = false: everything required) and
+// edit (partial = true: only the fields that were sent). Returns { error } or { value }.
+function validateItem(body, { partial = false } = {}) {
+  const value = {};
+  const has = (k) => body[k] !== undefined && body[k] !== null && body[k] !== '';
+  const text = (k, label, min, max) => {
+    if (!has(k)) return partial ? null : `${label} is required`;
+    if (typeof body[k] !== 'string') return `${label} is invalid`;
+    const t = body[k].trim();
+    if (t.length < min || t.length > max) return `${label} must be ${min}-${max} characters`;
+    value[k] = t;
+    return null;
+  };
+
+  let err =
+    text('title', 'Title', 3, 100) ||
+    text('description', 'Description', 10, 2000) ||
+    text('pickupLocation', 'Pickup location', 2, 200);
+  if (err) return { error: err };
+
+  if (has('category')) {
+    if (!ITEM_CATEGORIES.includes(body.category)) return { error: 'Invalid category' };
+    value.category = body.category;
+  } else if (!partial) return { error: 'Category is required' };
+
+  if (has('condition')) {
+    if (!ITEM_CONDITIONS.includes(body.condition)) return { error: 'Invalid condition' };
+    value.condition = body.condition;
+  } else if (!partial) value.condition = 'Good';
+
+  if (has('rentPricePerDay')) {
+    const price = Number(body.rentPricePerDay);
+    if (!Number.isFinite(price) || price <= 0 || price > 100000) return { error: 'Rent per day must be a number between 1 and 100000' };
+    value.rentPricePerDay = price;
+  } else if (!partial) return { error: 'Rent per day is required' };
+
+  if (has('securityDeposit')) {
+    const deposit = Number(body.securityDeposit);
+    if (!Number.isFinite(deposit) || deposit < 0 || deposit > 1000000) return { error: 'Security deposit must be a number between 0 and 1000000' };
+    value.securityDeposit = deposit;
+  } else if (!partial) value.securityDeposit = 0;
+
+  if (body.images !== undefined || !partial) {
+    const images = body.images;
+    if (!Array.isArray(images) || images.length === 0) return { error: 'Please upload at least one image of the item' };
+    if (images.length > MAX_ITEM_IMAGES) return { error: `You can add at most ${MAX_ITEM_IMAGES} images` };
+    const imageOk = (img) =>
+      typeof img === 'string' && img.length <= MAX_IMAGE_DATA_LENGTH && /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(img);
+    if (!images.every(imageOk)) return { error: 'Only uploaded image files (JPG, PNG, WEBP, GIF, max 5 MB each) are allowed' };
+    value.images = images;
+  }
+
+  if (partial && body.availability !== undefined) value.availability = Boolean(body.availability);
+  return { value };
+}
+
+// ---- Per-IP rate limits (the per-email cooldown/attempt caps above are the
+// stronger defence; these stop floods from a single machine). ----
+const limiter = (windowMinutes, max, message) => rateLimit({
+  windowMs: windowMinutes * 60 * 1000,
+  max,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: message }
+});
+const loginLimiter = limiter(15, 10, 'Too many login attempts. Please try again in 15 minutes.');
+const registerLimiter = limiter(60, 10, 'Too many registration attempts. Please try again later.');
+const otpSendLimiter = limiter(60, 8, 'Too many OTP requests. Please try again later.');
+const otpVerifyLimiter = limiter(15, 20, 'Too many verification attempts. Please try again in 15 minutes.');
+const complaintLimiter = limiter(60, 10, 'You are filing complaints too quickly. Please try again later.');
 
 // Format: 0801CSYYRRRR@sgsits.ac.in — shared by send-otp, verify-otp and register.
 const COLLEGE_EMAIL_REGEX = /^0801cs\d{2}\d{4}@sgsits\.ac\.in$/i;
@@ -35,7 +188,7 @@ apiRouter.use(express.json());
 
 function stripPassword(user) {
   if (!user) return user;
-  const { passwordHash, ...rest } = user;
+  const { passwordHash, tokenVersion, ...rest } = user;
   return rest;
 }
 
@@ -54,6 +207,10 @@ export async function authenticateToken(req, res, next) {
 
     if (!user) {
       return res.status(401).json({ error: 'User account not found' });
+    }
+
+    if (!tokenIsCurrent(decoded, user)) {
+      return res.status(401).json({ error: 'Session ended. Please log in again.' });
     }
 
     if (user.isBlocked) {
@@ -79,7 +236,7 @@ export function requireAdmin(req, res, next) {
 // ----------------------------------------------------
 
 // POST /api/auth/send-otp — step 1 of registration: email a 6-digit code.
-apiRouter.post('/auth/send-otp', async (req, res) => {
+apiRouter.post('/auth/send-otp', otpSendLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) {
@@ -98,7 +255,12 @@ apiRouter.post('/auth/send-otp', async (req, res) => {
       return res.status(400).json({ error: 'An account with this email already exists' });
     }
 
-    const otpCode = String(Math.floor(100000 + Math.random() * 900000));
+    const waitSeconds = await otpCooldownLeft(emailValue, 'register');
+    if (waitSeconds > 0) {
+      return res.status(429).json({ error: `Please wait ${waitSeconds} seconds before requesting another OTP.` });
+    }
+
+    const otpCode = generateOtp();
     await emailOtps.create(emailValue, otpCode, 'register', 1);
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[DEV] register OTP for ${emailValue}: ${otpCode}`);
@@ -119,7 +281,7 @@ apiRouter.post('/auth/send-otp', async (req, res) => {
 });
 
 // POST /api/auth/verify-otp — step 2 of registration: check the code.
-apiRouter.post('/auth/verify-otp', async (req, res) => {
+apiRouter.post('/auth/verify-otp', otpVerifyLimiter, async (req, res) => {
   try {
     const { email, otp } = req.body;
     if (!email || !otp) {
@@ -127,16 +289,9 @@ apiRouter.post('/auth/verify-otp', async (req, res) => {
     }
 
     const emailValue = String(email).trim().toLowerCase();
-    const record = await emailOtps.findLatestByEmail(emailValue, 'register');
-
-    if (!record) {
-      return res.status(400).json({ error: 'No OTP found for this email. Please request a new one.' });
-    }
-    if (new Date(record.expiresAt) < new Date()) {
-      return res.status(400).json({ error: 'This OTP has expired. Please request a new one.' });
-    }
-    if (String(record.otpCode) !== String(otp).trim()) {
-      return res.status(400).json({ error: 'Incorrect OTP. Please check and try again.' });
+    const otpError = await checkOtpGuess(emailValue, 'register', otp);
+    if (otpError) {
+      return res.status(400).json({ error: otpError });
     }
 
     await emailOtps.markVerified(emailValue, 'register');
@@ -148,7 +303,7 @@ apiRouter.post('/auth/verify-otp', async (req, res) => {
 });
 
 // POST /api/auth/register — step 3: requires a verified OTP for this email.
-apiRouter.post('/auth/register', async (req, res) => {
+apiRouter.post('/auth/register', registerLimiter, async (req, res) => {
   try {
     const {
       name,
@@ -164,6 +319,21 @@ apiRouter.post('/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
+    const nameText = String(name).trim();
+    if (nameText.length < 2 || nameText.length > 60) {
+      return res.status(400).json({ error: 'Name must be 2-60 characters long' });
+    }
+    if (!/^\d{10}$/.test(String(mobileNumber).trim())) {
+      return res.status(400).json({ error: 'Mobile number must be 10 digits' });
+    }
+    const passwordError = passwordProblem(password);
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError });
+    }
+    if (String(semester || '').length > 30 || String(department || '').length > 100) {
+      return res.status(400).json({ error: 'Invalid semester or department' });
+    }
+
     // ONLY COLLEGE CS GMAIL ALLOWED
     // Format: 0801CSYYRRRR@sgsits.ac.in
     const emailValue = String(email).trim().toLowerCase();
@@ -172,6 +342,12 @@ apiRouter.post('/auth/register', async (req, res) => {
       return res.status(400).json({
         error: 'Please use your college CS email. Format: 0801CSYYRRRR@sgsits.ac.in'
       });
+    }
+
+    // The enrollment number is the first part of the college email
+    // (0801CS23xxxx@sgsits.ac.in), so nobody can register with someone else's number.
+    if (String(enrollmentNumber).trim().toLowerCase() !== emailValue.split('@')[0]) {
+      return res.status(400).json({ error: 'Enrollment number must match your college email (the part before @)' });
     }
 
     // Email must have gone through send-otp + verify-otp before an account
@@ -194,7 +370,7 @@ apiRouter.post('/auth/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(String(password), 10);
 
     const newUser = await users.create({
-      name: String(name).trim(),
+      name: nameText,
       email: emailValue,
       passwordHash,
       enrollmentNumber: String(enrollmentNumber).trim(),
@@ -208,7 +384,7 @@ apiRouter.post('/auth/register', async (req, res) => {
     // fresh OTP.
     await emailOtps.deleteByEmail(emailValue, 'register');
 
-    const token = jwt.sign({ userId: newUser._id, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });
+    const token = signToken(newUser);
 
     return res.status(201).json({
       message: 'Student registered successfully',
@@ -222,7 +398,7 @@ apiRouter.post('/auth/register', async (req, res) => {
 });
 
 // POST /api/auth/login
-apiRouter.post('/auth/login', async (req, res) => {
+apiRouter.post('/auth/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -237,18 +413,21 @@ apiRouter.post('/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid email or password' });
     }
 
+    const passwordMatches = await users.verifyPassword(String(password), user.passwordHash);
+    if (!passwordMatches) {
+      return res.status(400).json({ error: 'Invalid email or password' });
+    }
+
+    // Checked only after the password is right, so a wrong guess can't reveal
+    // whether an account exists or is blocked.
     if (user.isBlocked) {
       return res.status(403).json({
         error: 'ACCOUNT BLOCKED: You have received 5 or more verified complaints. Only CS Admin can unblock your account.'
       });
     }
 
-    const passwordMatches = await users.verifyPassword(String(password), user.passwordHash);
-    if (!passwordMatches) {
-      return res.status(400).json({ error: 'Invalid email or password' });
-    }
 
-    const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    const token = signToken(user);
 
     return res.json({
       message: 'Login successful',
@@ -261,6 +440,18 @@ apiRouter.post('/auth/login', async (req, res) => {
   }
 });
 
+// POST /api/auth/logout — ends this login on the server too: every token issued
+// to this user so far stops working (so a copied token can't be reused).
+apiRouter.post('/auth/logout', authenticateToken, async (req, res) => {
+  try {
+    await users.bumpTokenVersion(req.user._id);
+    return res.json({ message: 'Logged out' });
+  } catch (err) {
+    console.error('logout error:', err);
+    return res.status(500).json({ error: 'Could not log out' });
+  }
+});
+
 // ----------------------------------------------------
 // FORGOT PASSWORD (email OTP) — mirrors the register OTP flow, but requires
 // an account to already EXIST for the email, and uses purpose 'reset' so it
@@ -268,7 +459,7 @@ apiRouter.post('/auth/login', async (req, res) => {
 // ----------------------------------------------------
 
 // POST /api/auth/forgot-password/send-otp
-apiRouter.post('/auth/forgot-password/send-otp', async (req, res) => {
+apiRouter.post('/auth/forgot-password/send-otp', otpSendLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) {
@@ -287,7 +478,12 @@ apiRouter.post('/auth/forgot-password/send-otp', async (req, res) => {
       return res.status(404).json({ error: 'No account found with this email.' });
     }
 
-    const otpCode = String(Math.floor(100000 + Math.random() * 900000));
+    const waitSeconds = await otpCooldownLeft(emailValue, 'reset');
+    if (waitSeconds > 0) {
+      return res.status(429).json({ error: `Please wait ${waitSeconds} seconds before requesting another OTP.` });
+    }
+
+    const otpCode = generateOtp();
     await emailOtps.create(emailValue, otpCode, 'reset', 1);
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[DEV] reset OTP for ${emailValue}: ${otpCode}`);
@@ -308,7 +504,7 @@ apiRouter.post('/auth/forgot-password/send-otp', async (req, res) => {
 });
 
 // POST /api/auth/forgot-password/verify-otp
-apiRouter.post('/auth/forgot-password/verify-otp', async (req, res) => {
+apiRouter.post('/auth/forgot-password/verify-otp', otpVerifyLimiter, async (req, res) => {
   try {
     const { email, otp } = req.body;
     if (!email || !otp) {
@@ -316,16 +512,9 @@ apiRouter.post('/auth/forgot-password/verify-otp', async (req, res) => {
     }
 
     const emailValue = String(email).trim().toLowerCase();
-    const record = await emailOtps.findLatestByEmail(emailValue, 'reset');
-
-    if (!record) {
-      return res.status(400).json({ error: 'No OTP found for this email. Please request a new one.' });
-    }
-    if (new Date(record.expiresAt) < new Date()) {
-      return res.status(400).json({ error: 'This OTP has expired. Please request a new one.' });
-    }
-    if (String(record.otpCode) !== String(otp).trim()) {
-      return res.status(400).json({ error: 'Incorrect OTP. Please check and try again.' });
+    const otpError = await checkOtpGuess(emailValue, 'reset', otp);
+    if (otpError) {
+      return res.status(400).json({ error: otpError });
     }
 
     await emailOtps.markVerified(emailValue, 'reset');
@@ -338,14 +527,15 @@ apiRouter.post('/auth/forgot-password/verify-otp', async (req, res) => {
 
 // POST /api/auth/forgot-password/reset — final step: requires a verified
 // 'reset' OTP for this email, consumes it on success.
-apiRouter.post('/auth/forgot-password/reset', async (req, res) => {
+apiRouter.post('/auth/forgot-password/reset', otpVerifyLimiter, async (req, res) => {
   try {
     const { email, newPassword } = req.body;
     if (!email || !newPassword) {
       return res.status(400).json({ error: 'Email and new password are required' });
     }
-    if (String(newPassword).length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    const newPasswordError = passwordProblem(newPassword);
+    if (newPasswordError) {
+      return res.status(400).json({ error: newPasswordError });
     }
 
     const emailValue = String(email).trim().toLowerCase();
@@ -362,6 +552,7 @@ apiRouter.post('/auth/forgot-password/reset', async (req, res) => {
 
     const passwordHash = await bcrypt.hash(String(newPassword), 10);
     await users.setPassword(existingUser._id, passwordHash);
+    await users.bumpTokenVersion(existingUser._id); // old logins must not survive a password reset
 
     // Consumed — a future reset for this email needs a fresh OTP.
     await emailOtps.deleteByEmail(emailValue, 'reset');
@@ -450,28 +641,21 @@ apiRouter.post('/items', authenticateToken, async (req, res) => {
     const user = req.user;
     const { title, category, description, images, rentPricePerDay, securityDeposit, condition, pickupLocation } = req.body;
 
-    if (!title || !category || !description || !rentPricePerDay || !pickupLocation) {
-      return res.status(400).json({ error: 'Please provide all required item details' });
-    }
-
-    if (!Array.isArray(images) || images.length === 0) {
-      return res.status(400).json({ error: 'Please upload at least one image of the item' });
-    }
-
-    if (!images.every((img) => typeof img === 'string' && /^data:image\/(jpeg|png|webp|gif);base64,/.test(img))) {
-      return res.status(400).json({ error: 'Only uploaded image files (JPG, PNG, WEBP, GIF) are allowed' });
+    const checked = validateItem(req.body);
+    if (checked.error) {
+      return res.status(400).json({ error: checked.error });
     }
 
     const newItem = await items.create({
       ownerId: user._id,
-      title,
-      category,
-      description,
-      images,
-      rentPricePerDay: Number(rentPricePerDay),
-      securityDeposit: Number(securityDeposit || 0),
-      condition: condition || 'Good',
-      pickupLocation
+      title: checked.value.title,
+      category: checked.value.category,
+      description: checked.value.description,
+      images: checked.value.images,
+      rentPricePerDay: checked.value.rentPricePerDay,
+      securityDeposit: checked.value.securityDeposit,
+      condition: checked.value.condition,
+      pickupLocation: checked.value.pickupLocation
     });
 
     return res.status(201).json({ message: 'Item listed successfully', item: newItem });
@@ -494,18 +678,11 @@ apiRouter.put('/items/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized to modify this listing' });
     }
 
-    const { title, category, description, images, rentPricePerDay, securityDeposit, availability, condition, pickupLocation } = req.body;
-
-    const changes = {};
-    if (title) changes.title = title;
-    if (category) changes.category = category;
-    if (description) changes.description = description;
-    if (images) changes.images = images;
-    if (rentPricePerDay !== undefined) changes.rentPricePerDay = Number(rentPricePerDay);
-    if (securityDeposit !== undefined) changes.securityDeposit = Number(securityDeposit);
-    if (availability !== undefined) changes.availability = Boolean(availability);
-    if (condition) changes.condition = condition;
-    if (pickupLocation) changes.pickupLocation = pickupLocation;
+    const checked = validateItem(req.body, { partial: true });
+    if (checked.error) {
+      return res.status(400).json({ error: checked.error });
+    }
+    const changes = checked.value;
 
     const updated = await items.update(req.params.id, changes);
     return res.json({ message: 'Item listing updated', item: updated });
@@ -807,6 +984,14 @@ apiRouter.get('/bookings/my', authenticateToken, async (req, res) => {
   }
 });
 
+// New status -> the only status a booking may be in beforehand.
+// (Expired is set only by the server's own expiry job.)
+const BOOKING_TRANSITIONS = {
+  Accepted: 'Pending',
+  Rejected: 'Pending',
+  Completed: 'Accepted'
+};
+
 // PUT /api/bookings/:id/status
 apiRouter.put('/bookings/:id/status', authenticateToken, async (req, res) => {
   try {
@@ -824,8 +1009,14 @@ apiRouter.put('/bookings/:id/status', authenticateToken, async (req, res) => {
     if (!isOwner && !isBorrower && user.role !== 'admin') {
       return res.status(403).json({ error: 'Not authorized for this booking action' });
     }
-    if (['Accepted', 'Rejected'].includes(status) && !isOwner && user.role !== 'admin') {
-      return res.status(403).json({ error: 'Only item owner can accept or reject booking requests' });
+    // Only these changes exist, and each one is allowed from one stage only.
+    // Borrowers cannot change status at all: accepting, rejecting and marking
+    // the item returned (Completed) are the owner's (or admin's) decisions.
+    if (typeof status !== 'string' || !Object.prototype.hasOwnProperty.call(BOOKING_TRANSITIONS, status)) {
+      return res.status(400).json({ error: 'Invalid booking status' });
+    }
+    if (!isOwner && user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only the item owner can accept, reject or complete a booking' });
     }
 
     let updated;
@@ -850,7 +1041,13 @@ apiRouter.put('/bookings/:id/status', authenticateToken, async (req, res) => {
         `[FAST_BOOKING_ACCEPTED] booking_id=${updated._id} user_id=${updated.borrowerId} owner_id=${updated.ownerId} product_id=${updated.itemId} timestamp=${new Date().toISOString()}`
       );
     } else {
-      updated = await bookings.updateStatus(req.params.id, status);
+      updated = await bookings.updateStatusIf(req.params.id, BOOKING_TRANSITIONS[status], status);
+      if (!updated) {
+        const fresh = await bookings.findById(req.params.id);
+        return res.status(409).json({
+          error: `This booking can't be marked ${status} from its current status (${fresh?.status || 'unknown'}).`
+        });
+      }
       if (status === 'Rejected' && booking.isFastDelivery) {
         console.log(
           `[FAST_BOOKING_REJECTED] booking_id=${updated._id} user_id=${updated.borrowerId} owner_id=${updated.ownerId} product_id=${updated.itemId} timestamp=${new Date().toISOString()}`
@@ -858,7 +1055,7 @@ apiRouter.put('/bookings/:id/status', authenticateToken, async (req, res) => {
       }
     }
 
-    const targetUserId = isOwner ? booking.borrowerId : booking.ownerId;
+    const targetUserId = booking.borrowerId; // the actor is always the owner/admin
     await notifications.create({
       userId: targetUserId,
       title: `Booking ${updated.status}`,
@@ -998,10 +1195,11 @@ apiRouter.put('/chat/messages/:bookingId/read', authenticateToken, async (req, r
 apiRouter.post('/chat/messages', authenticateToken, async (req, res) => {
   try {
     const sender = req.user;
-    const { bookingId, content } = req.body;
+    const { bookingId } = req.body;
+    const content = cleanMessage(req.body.content);
 
     if (!bookingId || !content) {
-      return res.status(400).json({ error: 'Booking ID and message content are required' });
+      return res.status(400).json({ error: 'Booking ID and a message (up to 2000 characters) are required' });
     }
 
     const booking = await bookings.findById(bookingId);
@@ -1068,10 +1266,11 @@ apiRouter.get('/messages/direct', authenticateToken, requireAdmin, async (req, r
 apiRouter.post('/messages/direct', authenticateToken, async (req, res) => {
   try {
     const sender = req.user;
-    const { receiverId, content } = req.body;
+    const { receiverId } = req.body;
+    const content = cleanMessage(req.body.content);
 
     if (!receiverId || !content) {
-      return res.status(400).json({ error: 'Recipient and message content are required' });
+      return res.status(400).json({ error: 'Recipient and a message (up to 2000 characters) are required' });
     }
 
     if (sender.role !== 'admin') {
@@ -1137,8 +1336,24 @@ apiRouter.post('/complaints/proof', authenticateToken, proofUpload.single('proof
   return res.json({ url: `/uploads/complaint-proofs/${req.file.filename}` });
 });
 
+// Allowed complaint types / statuses (must match the frontend dropdown and the admin actions).
+const COMPLAINT_TYPES = ['Demanding More Money', 'Fake Listing', 'Damaged Item', 'Fraud', 'Misbehavior', 'Other'];
+const COMPLAINT_STATUSES = ['Pending', 'Under Review', 'Resolved', 'Rejected'];
+
+// proofUrl must be a file the reporter themself uploaded via /complaints/proof
+// (stored as /uploads/complaint-proofs/<their user id>_<something>.<ext>).
+// Anything else — javascript: links, other sites, someone else's file — is refused.
+function isOwnProofUrl(proofUrl, reporterId) {
+  if (typeof proofUrl !== 'string') return false;
+  const escapedId = String(reporterId).replace(/[^A-Za-z0-9_-]/g, '');
+  const re = new RegExp('^/uploads/complaint-proofs/' + escapedId + '_[A-Za-z0-9._-]+\\.(png|jpe?g|webp|gif|pdf)$', 'i');
+  if (!re.test(proofUrl)) return false;
+  const file = path.join(process.cwd(), 'uploads', 'complaint-proofs', path.basename(proofUrl));
+  return fs.existsSync(file);
+}
+
 // POST /api/complaints
-apiRouter.post('/complaints', authenticateToken, async (req, res) => {
+apiRouter.post('/complaints', complaintLimiter, authenticateToken, async (req, res) => {
   try {
     const reporter = req.user;
     const { reportedUserId, bookingId, type, description, proofUrl, itemTitle } = req.body;
@@ -1160,17 +1375,51 @@ apiRouter.post('/complaints', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Reported user not found' });
     }
 
+    if (!COMPLAINT_TYPES.includes(type)) {
+      return res.status(400).json({ error: 'Invalid complaint type' });
+    }
+    const descriptionText = String(description).trim();
+    if (!descriptionText || descriptionText.length > 2000) {
+      return res.status(400).json({ error: 'Description is required and must be at most 2000 characters' });
+    }
+    if (!isOwnProofUrl(proofUrl, reporter._id)) {
+      return res.status(400).json({ error: 'Invalid proof file. Please upload your proof again.' });
+    }
+    if (String(reportedUser._id) === String(reporter._id)) {
+      return res.status(400).json({ error: 'You cannot file a complaint against yourself' });
+    }
+
+    // If the complaint is tied to a booking, the reporter must be on it and
+    // the reported student must be the other side; the item title comes from
+    // the booking, not from the client.
+    let booking = null;
+    if (bookingId) {
+      booking = await bookings.findById(bookingId);
+      if (!booking) {
+        return res.status(404).json({ error: 'Booking not found' });
+      }
+      const parties = [String(booking.borrowerId), String(booking.ownerId)];
+      if (!parties.includes(String(reporter._id)) || !parties.includes(String(reportedUser._id))) {
+        return res.status(403).json({ error: 'You can only report the other person on your own booking' });
+      }
+    }
+
+    if (await complaints.existsActive(reporter._id, reportedUser._id, booking ? booking._id : null)) {
+      return res.status(409).json({ error: 'You have already filed a complaint against this student for this booking.' });
+    }
+
     const newComplaint = await complaints.create({
       reporterId: reporter._id,
       reportedUserId: reportedUser._id,
-      bookingId,
-      itemTitle,
+      bookingId: booking ? booking._id : null,
+      itemTitle: booking ? booking.itemTitle : null,
       type,
-      description,
+      description: descriptionText,
       proofUrl
     });
 
-    await checkAndApplyAutoBlock(reportedUser._id);
+    // No auto-block here: only complaints the admin verifies (Resolved) count,
+    // and that check runs in PUT /admin/complaints/:id.
 
     const admins = await users.findAdmins();
     await Promise.all(
@@ -1244,6 +1493,9 @@ apiRouter.post('/ratings', authenticateToken, async (req, res) => {
     if (!parties.includes(String(reviewer._id)) || !parties.includes(String(revieweeId))) {
       return res.status(403).json({ error: 'You can only rate the other person on your own booking' });
     }
+    if (booking.status !== 'Completed') {
+      return res.status(400).json({ error: 'You can rate only after the booking is completed' });
+    }
     if (await ratings.existsForBooking(bookingId, reviewer._id)) {
       return res.status(409).json({ error: 'You have already rated this booking' });
     }
@@ -1253,7 +1505,7 @@ apiRouter.post('/ratings', authenticateToken, async (req, res) => {
       revieweeId,
       reviewerId: reviewer._id,
       stars: starsNum,
-      comment: comment || 'Great CS resource exchange!'
+      comment: (typeof comment === 'string' && comment.trim() ? comment.trim() : 'Great CS resource exchange!').slice(0, 500)
     });
 
     const { averageRating, totalRatings } = await ratings.averageForUser(revieweeId);
@@ -1357,6 +1609,12 @@ apiRouter.put('/admin/complaints/:id', authenticateToken, requireAdmin, async (r
     }
 
     const { status, adminNote } = req.body;
+    if (status !== undefined && !COMPLAINT_STATUSES.includes(status)) {
+      return res.status(400).json({ error: 'Invalid complaint status' });
+    }
+    if (adminNote !== undefined && String(adminNote).length > 2000) {
+      return res.status(400).json({ error: 'Admin note is too long (max 2000 characters)' });
+    }
     const updated = await complaints.update(req.params.id, { status, adminNote });
 
     if (status && status !== complaint.status) {

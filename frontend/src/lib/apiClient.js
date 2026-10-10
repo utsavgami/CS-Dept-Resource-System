@@ -30,6 +30,22 @@ export function setStoredUser(user) {
   }
 }
 
+// Fetches a login-protected file (e.g. a complaint proof) and returns it as a
+// Blob. <img src> / <a href> can't send the login token, so the file is
+// fetched here and shown from memory. Only images and PDFs are accepted.
+export async function fetchProtectedFile(url) {
+  const token = getAuthToken();
+  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!response.ok) {
+    throw new Error('Could not load the file');
+  }
+  const blob = await response.blob();
+  if (!/^(image\/(png|jpeg|gif|webp)|application\/pdf)$/.test(blob.type)) {
+    throw new Error('Unsupported file type');
+  }
+  return blob;
+}
+
 // A plain fetch() with no server response (slow/blocked network, backend
 // hung on something like a slow SMTP connection) waits indefinitely — this
 // is why "Send OTP" could look permanently stuck. Aborting after 20s turns
@@ -124,6 +140,7 @@ export const api = {
   forgotPasswordVerifyOtp: (data) => fetchWithAuth('/auth/forgot-password/verify-otp', { method: 'POST', body: JSON.stringify(data) }),
   resetPassword: (data) => fetchWithAuth('/auth/forgot-password/reset', { method: 'POST', body: JSON.stringify(data) }),
   getMe: () => fetchWithAuth('/auth/me'),
+  logout: () => fetchWithAuth('/auth/logout', { method: 'POST' }),
 
   // Users
   getUserProfile: (id) => fetchWithAuth(`/users/${id}`),

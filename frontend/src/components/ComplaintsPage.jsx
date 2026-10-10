@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/apiClient';
+import { ProofImage, ProofLink } from './ProofViewer';
 import {
   AlertTriangle,
   ShieldAlert,
@@ -244,8 +245,8 @@ export const ComplaintsPage = ({
               <div className="flex flex-col sm:flex-row items-center gap-4">
                 {proofUrl && (
                   <div className="relative shrink-0 ">
-                    <img
-                      src={proofUrl}
+                    <ProofImage
+                      url={proofUrl}
                       alt="Proof preview"
                       className="w-14 h-15 rounded-lg object-cover border border-slate-200 dark:border-slate-700"
                     />
@@ -349,13 +350,13 @@ export const ComplaintsPage = ({
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                       Submitted Proof:
                     </span>
-                    <a href={c.proofUrl} target="_blank" rel="noreferrer">
-                      <img
-                        src={c.proofUrl}
+                    <ProofLink url={c.proofUrl}>
+                      <ProofImage
+                        url={c.proofUrl}
                         alt="Proof"
                         className="w-32 h-20 rounded-xl object-cover border border-slate-200 dark:border-slate-800 hover:opacity-80 transition"
                       />
-                    </a>
+                    </ProofLink>
                   </div>
                 )}
 

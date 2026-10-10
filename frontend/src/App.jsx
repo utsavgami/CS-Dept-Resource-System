@@ -67,6 +67,8 @@ export default function App() {
   }, []);
 
   const handleLogout = () => {
+    // End the login on the server as well (best effort), then clear this browser.
+    api.logout().catch(() => {});
     setAuthToken(null);
     setStoredUser(null);
     setCurrentUser(null);

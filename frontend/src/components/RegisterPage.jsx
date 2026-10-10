@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api, setAuthToken, setStoredUser } from '../lib/apiClient';
 import { Avatar } from './Avatar';
-import { UserPlus, Mail, Lock, User as UserIcon, Phone, FileText, Upload, Loader2, AlertTriangle, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { UserPlus, Mail, Lock, User as UserIcon, Phone, FileText, Upload, Loader2, AlertTriangle, CheckCircle2, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { animate, createScope, stagger } from 'animejs';
 
 // Must match the backend's COLLEGE_EMAIL_REGEX in api.js — format:
@@ -19,6 +19,7 @@ export const RegisterPage = ({
   const [enrollmentNumber, setEnrollmentNumber] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [semester, setSemester] = useState('4th Semester');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -502,14 +503,23 @@ export const RegisterPage = ({
               <div className="relative">
                 <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
+              <p className="text-[10px] text-slate-400 mt-1">At least 8 characters, with a letter and a number</p>
             </div>
           </div>
 
