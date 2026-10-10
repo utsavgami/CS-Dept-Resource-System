@@ -159,20 +159,54 @@ function validateItem(body, { partial = false } = {}) {
   return { value };
 }
 
-// ---- Per-IP rate limits (the per-email cooldown/attempt caps above are the
-// stronger defence; these stop floods from a single machine). ----
-const limiter = (windowMinutes, max, message) => rateLimit({
-  windowMs: windowMinutes * 60 * 1000,
-  max,
+// ---- Rate limits ----
+// Limits are per ACCOUNT (the email being tried), not just per IP, because many
+// students can share one IP (college wifi / NAT) and one student's wrong guesses
+// must not lock out everyone else. Each IP also gets a much larger ceiling so a
+// single machine can't hammer thousands of accounts. (Behind a proxy/nginx, set
+// app.set('trust proxy', 1) in server.js so the IP seen here is the real one.)
+const emailOf = (req) => String(req.body?.email || '').trim().toLowerCase().slice(0, 200);
+
+const makeLimiter = ({ minutes, max, message, byEmail = false, failedOnly = false }) =>
+  rateLimit({
+    windowMs: minutes * 60 * 1000,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: message },
+    // failedOnly: only responses with an error status count (a correct login doesn't use up attempts)
+    skipSuccessfulRequests: failedOnly,
+    // byEmail: one bucket per email address; requests without an email skip this limiter
+    ...(byEmail ? { keyGenerator: (req) => emailOf(req), skip: (req) => !emailOf(req) } : {})
+  });
+
+// Login: 10 wrong passwords per account per 15 min; 100 wrong attempts per IP per 15 min.
+const loginLimiter = [
+  makeLimiter({ minutes: 15, max: 100, failedOnly: true, message: 'Too many failed login attempts from this network. Please try again in 15 minutes.' }),
+  makeLimiter({ minutes: 15, max: 10, byEmail: true, failedOnly: true, message: 'Too many failed login attempts for this account. Please try again in 15 minutes.' })
+];
+// Register: per IP only (the email must already be OTP-verified, which is limited below).
+const registerLimiter = makeLimiter({ minutes: 60, max: 30, message: 'Too many registration attempts. Please try again later.' });
+// OTP emails: 6 per address per hour (plus the 60-second cooldown), 60 per IP per hour.
+const otpSendLimiter = [
+  makeLimiter({ minutes: 60, max: 60, message: 'Too many OTP requests from this network. Please try again later.' }),
+  makeLimiter({ minutes: 60, max: 6, byEmail: true, message: 'Too many OTP requests for this email. Please try again later.' })
+];
+// OTP checks: the real guard is the 5-wrong-guesses cap stored with each OTP;
+// these just stop floods (30 per address, 300 per IP, per 15 min).
+const otpVerifyLimiter = [
+  makeLimiter({ minutes: 15, max: 300, message: 'Too many verification attempts from this network. Please try again later.' }),
+  makeLimiter({ minutes: 15, max: 30, byEmail: true, message: 'Too many verification attempts for this email. Please try again in 15 minutes.' })
+];
+// Complaints: per logged-in user (the limiter runs after authenticateToken), not per IP.
+const complaintLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: message }
+  message: { error: 'You are filing complaints too quickly. Please try again later.' },
+  keyGenerator: (req) => String(req.user?._id || 'anonymous')
 });
-const loginLimiter = limiter(15, 10, 'Too many login attempts. Please try again in 15 minutes.');
-const registerLimiter = limiter(60, 10, 'Too many registration attempts. Please try again later.');
-const otpSendLimiter = limiter(60, 8, 'Too many OTP requests. Please try again later.');
-const otpVerifyLimiter = limiter(15, 20, 'Too many verification attempts. Please try again in 15 minutes.');
-const complaintLimiter = limiter(60, 10, 'You are filing complaints too quickly. Please try again later.');
 
 // Format: 0801CSYYRRRR@sgsits.ac.in — shared by send-otp, verify-otp and register.
 const COLLEGE_EMAIL_REGEX = /^0801cs\d{2}\d{4}@sgsits\.ac\.in$/i;
@@ -1353,7 +1387,7 @@ function isOwnProofUrl(proofUrl, reporterId) {
 }
 
 // POST /api/complaints
-apiRouter.post('/complaints', complaintLimiter, authenticateToken, async (req, res) => {
+apiRouter.post('/complaints', authenticateToken, complaintLimiter, async (req, res) => {
   try {
     const reporter = req.user;
     const { reportedUserId, bookingId, type, description, proofUrl, itemTitle } = req.body;
